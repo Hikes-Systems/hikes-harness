@@ -1,4 +1,4 @@
-# Hikes
+# Hikes (Under Major Changes and development)
 
 A local-first agent harness. One command starts a backend, opens a browser UI, and gives an agent real tools — web search, workspace files, a shell, and persistent memory. Sessions and keys stay on your machine.
 
