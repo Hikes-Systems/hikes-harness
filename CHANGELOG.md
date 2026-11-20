@@ -10,7 +10,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
-Nothing changed yet.
+### Added
+
+- **Trusted npm publishing.** A GitHub Actions workflow verifies and builds releases before publishing to npm through OIDC.
+- **npm package contents.** Packing and publishing build the UI and include the runtime files needed by the CLI.
 
 ---
 

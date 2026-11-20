@@ -250,6 +250,9 @@ export async function runLauncher(options: LauncherOptions): Promise<void> {
   const { start, root } = options;
   const version = VERSION;
   const flags = parseFlags(options.argv);
+  if (!flags.prod && !flags.apiOnly && !fs.existsSync(path.join(root, "node_modules", "vite"))) {
+    flags.prod = true;
+  }
 
   const nodeParts = process.versions.node.split(".").map(Number);
   if (nodeParts[0] < 22 || (nodeParts[0] === 22 && nodeParts[1] < 18)) {

@@ -1,6 +1,6 @@
 {
-  "name": "hikes-harness",
-  "private": true,
+  "name": "@hikessystems/hikes",
+  "private": false,
   "version": "1.0.1",
   "type": "module",
   "description": "Hikes — a local agent harness with real tools, sessions and a one-command launcher",
@@ -14,6 +14,15 @@
     "url": "https://github.com/hikes-systems/hikes-harness/issues"
   },
   "license": "MIT",
+  "files": [
+    "server/",
+    "shared/",
+    "dist/",
+    "docs/showcase/",
+    "LICENSE",
+    "README.md",
+    "CHANGELOG.md"
+  ],
   "bin": {
     "hikes": "./server/index.ts"
   },
@@ -24,6 +33,7 @@
     "dev": "vite",
     "dev:api": "node server/index.ts --api-only",
     "build": "vite build",
+    "prepack": "npm run build",
     "preview": "vite preview",
     "test": "node --test",
     "typecheck": "tsc --noEmit",

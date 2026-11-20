@@ -163,6 +163,8 @@ npm link
 
 `npm link` puts a single `hikes` command on your `PATH`. The command points straight at `server/index.ts` — there is no separate launcher script to install, keep in sync, or audit.
 
+From a source checkout, Hikes uses Vite when its development dependencies are installed. An npm installation serves the bundled production UI instead; the package builds that UI when it is packed or published.
+
 ### Run
 
 ```bash
