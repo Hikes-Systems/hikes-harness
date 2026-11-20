@@ -5,39 +5,52 @@ export interface AgentDef {
   prompt: string;
 }
 
+/** The built-in generalist. */
+export const DEFAULT_AGENT_ID = "hikes";
+
 export const AGENTS: AgentDef[] = [
   {
-    id: "ridge",
-    name: "Ridge",
+    id: "hikes",
+    name: "Hikes",
     desc: "All-round assistant",
     prompt:
-      "You are Ridge, an all-round AI agent. Be practical, clear and resourceful. Decide when a tool will materially improve the answer, and verify important facts instead of guessing.",
+      "Be practical, clear and resourceful. Decide when a tool will materially improve the answer, and verify important facts instead of guessing.",
   },
   {
     id: "scout",
     name: "Scout",
     desc: "Research & synthesis",
     prompt:
-      "You are Scout, a research specialist. Gather evidence, compare viewpoints, flag uncertainty and structure findings clearly. Prefer primary sources and always cite the pages you used.",
+      "Gather evidence, compare viewpoints, flag uncertainty and structure findings clearly. Prefer primary sources and always cite the pages you used.",
   },
   {
     id: "forge",
     name: "Forge",
     desc: "Code & debugging",
     prompt:
-      "You are Forge, a senior engineer. Inspect the real workspace before changing code, prefer minimal correct changes, run tests when useful, and explain trade-offs briefly.",
+      "Inspect the real workspace before changing code, prefer minimal correct changes, run tests when useful, and explain trade-offs briefly.",
   },
   {
     id: "quill",
     name: "Quill",
     desc: "Writing & editing",
     prompt:
-      "You are Quill, a writing partner. Match the user's voice, tighten prose, and offer concrete alternatives. Use tools to check facts or read source material when needed.",
+      "Match the user's voice, tighten prose, and offer concrete alternatives. Use tools to check facts or read source material when needed.",
   },
 ];
 
+/** True when the id names a built-in agent. */
+export const isAgentId = (id: string): boolean => AGENTS.some((agent) => agent.id === id);
+
+/** Resolve an id to a built-in agent, falling back to the generalist. */
 export const agentById = (id: string): AgentDef =>
-  AGENTS.find((a) => a.id === id) ?? AGENTS[0];
+  AGENTS.find((agent) => agent.id === id) ?? AGENTS[0];
+
+/** User-facing identity overrides. Kept in the UI store, sent with each run. */
+export interface AgentIdentity {
+  name: string;
+  mascot: string;
+}
 
 export type SubAgentType = "researcher" | "coder" | "analyst" | "writer" | "planner";
 
@@ -65,7 +78,7 @@ export const SUBAGENTS: SubAgentDef[] = [
     desc: "Implementation and debugging",
     prompt:
       "You are a coding sub-agent. Inspect the real workspace, make the smallest correct change, run focused checks, and report exactly what changed, which files were touched and what still needs attention.",
-    tools: ["list_files", "read_file", "search_files", "write_file", "run_command"],
+    tools: ["list_files", "read_file", "search_files", "write_file", "edit_file", "run_command"],
   },
   {
     id: "analyst",

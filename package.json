@@ -1,23 +1,33 @@
 {
   "name": "hikes-harness",
   "private": true,
-  "version": "1.0.0",
+  "version": "1.0.1",
   "type": "module",
   "description": "Hikes — a local agent harness with real tools, sessions and a one-command launcher",
+  "author": "Hikes Systems",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/hikes-systems/hikes-harness.git"
+  },
+  "homepage": "https://github.com/hikes-systems/hikes-harness#readme",
+  "bugs": {
+    "url": "https://github.com/hikes-systems/hikes-harness/issues"
+  },
+  "license": "MIT",
   "bin": {
-    "hikes": "./bin/hikes.mjs"
+    "hikes": "./server/index.ts"
   },
   "engines": {
     "node": ">=22.18"
   },
   "scripts": {
     "dev": "vite",
-    "dev:api": "node server/index.ts",
+    "dev:api": "node server/index.ts --api-only",
     "build": "vite build",
     "preview": "vite preview",
+    "test": "node --test",
     "typecheck": "tsc --noEmit",
-    "start": "node bin/hikes.mjs",
-    "test": "node --test \"server/**/*.test.ts\""
+    "start": "node server/index.ts"
   },
   "dependencies": {
     "@hono/node-server": "^2.1.9",

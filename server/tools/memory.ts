@@ -43,7 +43,8 @@ export function memoryTools(): ToolDefinition[] {
       risk: "safe",
       spec: {
         name: "recall",
-        description: "Search long-term memory for facts or preferences relevant to the current request.",
+        description:
+          "Search long-term memory for facts or preferences relevant to the current request. Matches every word in the query, including partial words and tags, so a differently phrased fact can still surface.",
         parameters: {
           type: "object",
           properties: {

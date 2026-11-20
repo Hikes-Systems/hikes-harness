@@ -39,12 +39,14 @@ function CodeBlock({ code, lang }: { code: string; lang: string }) {
   );
 }
 
+/** Inline code, bold, italic, strikethrough and links. */
 function inline(text: string): ReactNode[] {
-  const parts = text.split(/(`[^`]+`|\*\*[^*]+\*\*|\*[^*\s][^*]*\*|\[[^\]]+\]\([^)]+\))/g);
+  const parts = text.split(/(`[^`]+`|\*\*[^*]+\*\*|~~[^~]+~~|\*[^*\s][^*]*\*|\[[^\]]+\]\([^)]+\))/g);
   return parts.map((p, i) => {
     if (!p) return null;
     if (p.startsWith("`")) return <code key={i} className="inline">{p.slice(1, -1)}</code>;
     if (p.startsWith("**")) return <strong key={i}>{p.slice(2, -2)}</strong>;
+    if (p.startsWith("~~")) return <del key={i}>{p.slice(2, -2)}</del>;
     if (p.startsWith("*")) return <em key={i}>{p.slice(1, -1)}</em>;
     const l = /^\[([^\]]+)\]\(([^)]+)\)$/.exec(p);
     if (l) return <a key={i} href={l[2]} target="_blank" rel="noreferrer">{l[1]}</a>;
@@ -52,13 +54,144 @@ function inline(text: string): ReactNode[] {
   });
 }
 
+type HeadingTag = "h1" | "h2" | "h3" | "h4" | "h5" | "h6";
+
+function Heading({ level, children }: { level: number; children: ReactNode }) {
+  const Tag = (["h1", "h2", "h3", "h4", "h5", "h6"] as HeadingTag[])[Math.min(Math.max(level, 1), 6) - 1];
+  return <Tag className={`md-h md-h${level}`}>{children}</Tag>;
+}
+
+/* ───────────── tables ───────────── */
+
+const DELIMITER = /^\s*\|?\s*:?-{2,}:?\s*(?:\|\s*:?-{2,}:?\s*)*\|?\s*$/;
+
+const isDelimiterRow = (line: string): boolean =>
+  line.includes("|") && DELIMITER.test(line);
+
+/** Split a table row into cells, honouring escaped pipes. */
+function splitRow(line: string): string[] {
+  let s = line.trim();
+  if (s.startsWith("|")) s = s.slice(1);
+  if (s.endsWith("|") && !s.endsWith("\\|")) s = s.slice(0, -1);
+  const cells: string[] = [];
+  let cur = "";
+  for (let i = 0; i < s.length; i++) {
+    const ch = s[i];
+    if (ch === "\\" && s[i + 1] === "|") {
+      cur += "|";
+      i++;
+      continue;
+    }
+    if (ch === "|") {
+      cells.push(cur.trim());
+      cur = "";
+      continue;
+    }
+    cur += ch;
+  }
+  cells.push(cur.trim());
+  return cells;
+}
+
+type Align = "left" | "center" | "right";
+
+function alignments(delimiter: string[]): Align[] {
+  return delimiter.map((cell) => {
+    const left = cell.startsWith(":");
+    const right = cell.endsWith(":");
+    if (left && right) return "center";
+    if (right) return "right";
+    if (left) return "left";
+    return "left";
+  });
+}
+
+function Table({ head, rows, align }: { head: string[]; rows: string[][]; align: Align[] }) {
+  return (
+    <div className="md-table-wrap">
+      <table className="md-table">
+        <thead>
+          <tr>
+            {head.map((cell, i) => (
+              <th key={i} style={{ textAlign: align[i] ?? "left" }}>{inline(cell)}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row, r) => (
+            <tr key={r}>
+              {row.map((cell, c) => (
+                <td key={c} style={{ textAlign: align[c] ?? "left" }}>{inline(cell)}</td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+/* ───────────── lists ───────────── */
+
+interface ListItem {
+  depth: number;
+  text: string;
+  ordered: boolean;
+}
+
+interface TreeNode {
+  item: ListItem;
+  children: TreeNode[];
+}
+
+/** Turn a flat list with indentation depths into a tree. */
+function buildTree(items: ListItem[]): TreeNode[] {
+  const roots: TreeNode[] = [];
+  const stack: TreeNode[] = [];
+  for (const item of items) {
+    const node: TreeNode = { item, children: [] };
+    while (stack.length && stack[stack.length - 1].item.depth >= item.depth) stack.pop();
+    if (stack.length) stack[stack.length - 1].children.push(node);
+    else roots.push(node);
+    stack.push(node);
+  }
+  return roots;
+}
+
+function ListNodes({ nodes, start }: { nodes: TreeNode[]; start?: number }) {
+  const ordered = nodes[0]?.item.ordered ?? false;
+  const Tag = ordered ? "ol" : "ul";
+  return (
+    <Tag className={ordered ? "md-ol" : "md-ul"} start={ordered ? start : undefined}>
+      {nodes.map((node, i) => (
+        <li key={i}>
+          <span>{inline(node.item.text)}</span>
+          {node.children.length > 0 && <ListNodes nodes={node.children} />}
+        </li>
+      ))}
+    </Tag>
+  );
+}
+
 function MarkdownImpl({ text }: { text: string }) {
   const lines = text.split("\n");
   const blocks: ReactNode[] = [];
   let i = 0;
   let k = 0;
+
+  const isBlockStart = (line: string): boolean =>
+    /^```/.test(line) ||
+    /^#{1,6}\s/.test(line) ||
+    /^\s*>\s?/.test(line) ||
+    /^\s*[-*]\s+/.test(line) ||
+    /^\s*\d+\.\s+/.test(line) ||
+    /^\s*([-*_])\s*(\1\s*){2,}$/.test(line) ||
+    isDelimiterRow(line);
+
   while (i < lines.length) {
     const line = lines[i];
+
+    /* fenced code */
     const fence = /^```(\w*)/.exec(line);
     if (fence) {
       const buf: string[] = [];
@@ -68,32 +201,111 @@ function MarkdownImpl({ text }: { text: string }) {
       blocks.push(<CodeBlock key={k++} code={buf.join("\n")} lang={fence[1]} />);
       continue;
     }
-    const h = /^(#{1,4})\s+(.*)/.exec(line);
-    if (h) { blocks.push(<h3 key={k++}>{inline(h[2])}</h3>); i++; continue; }
-    if (/^>\s?/.test(line)) {
+
+    /* horizontal rule */
+    if (/^\s*([-*_])\s*(\1\s*){2,}$/.test(line)) {
+      blocks.push(<hr key={k++} className="md-hr" />);
+      i++;
+      continue;
+    }
+
+    /* ATX heading */
+    const h = /^(#{1,6})\s+(.*)$/.exec(line);
+    if (h) {
+      const content = h[2].replace(/\s*#+\s*$/, "");
+      blocks.push(<Heading key={k++} level={h[1].length}>{inline(content)}</Heading>);
+      i++;
+      continue;
+    }
+
+    /* "--- Title" / "=== Title" — not valid Markdown, but a common way models
+       try to write a section divider with a title. Treat it as a heading so
+       it does not land as a stray paragraph. */
+    const pseudo = /^\s*(-{3,}|={3,})\s+(.+?)\s*$/.exec(line);
+    if (pseudo) {
+      const level = pseudo[1][0] === "=" ? 1 : 2;
+      const content = pseudo[2].replace(/\s*[-=]+\s*$/, "");
+      blocks.push(<Heading key={k++} level={level}>{inline(content)}</Heading>);
+      i++;
+      continue;
+    }
+
+    /* table: a header row followed by a delimiter row */
+    if (line.includes("|") && i + 1 < lines.length && isDelimiterRow(lines[i + 1])) {
+      const head = splitRow(line);
+      const align = alignments(splitRow(lines[i + 1]));
+      i += 2;
+      const rows: string[][] = [];
+      while (i < lines.length && lines[i].trim() && lines[i].includes("|")) {
+        rows.push(splitRow(lines[i++]));
+      }
+      blocks.push(<Table key={k++} head={head} rows={rows} align={align} />);
+      continue;
+    }
+
+    /* blockquote */
+    if (/^\s*>\s?/.test(line)) {
       const buf: string[] = [];
-      while (i < lines.length && /^>\s?/.test(lines[i])) buf.push(lines[i++].replace(/^>\s?/, ""));
-      blocks.push(<blockquote key={k++}>{buf.map((b, j) => <Fragment key={j}>{inline(b)}{j < buf.length - 1 && <br />}</Fragment>)}</blockquote>);
+      while (i < lines.length && /^\s*>\s?/.test(lines[i])) buf.push(lines[i++].replace(/^\s*>\s?/, ""));
+      blocks.push(
+        <blockquote key={k++}>
+          {buf.map((b, j) => (
+            <Fragment key={j}>{inline(b)}{j < buf.length - 1 && <br />}</Fragment>
+          ))}
+        </blockquote>,
+      );
       continue;
     }
-    if (/^\s*[-*]\s+/.test(line)) {
-      const items: string[] = [];
-      while (i < lines.length && /^\s*[-*]\s+/.test(lines[i])) items.push(lines[i++].replace(/^\s*[-*]\s+/, ""));
-      blocks.push(<ul key={k++}>{items.map((t, j) => <li key={j}>{inline(t)}</li>)}</ul>);
+
+    /* lists */
+    if (/^\s*[-*]\s+/.test(line) || /^\s*\d+\.\s+/.test(line)) {
+      const items: ListItem[] = [];
+      const start = Number(/^\s*(\d+)\./.exec(line)?.[1] ?? 1) || 1;
+      while (i < lines.length) {
+        const m = /^(\s*)([-*]|\d+\.)\s+(.*)$/.exec(lines[i]);
+        if (!m) break;
+        items.push({
+          depth: Math.floor(m[1].length / 2),
+          text: m[3],
+          ordered: /^\d/.test(m[2]),
+        });
+        i++;
+      }
+      blocks.push(<ListNodes key={k++} nodes={buildTree(items)} start={start} />);
       continue;
     }
-    if (/^\s*\d+\.\s+/.test(line)) {
-      const items: string[] = [];
-      while (i < lines.length && /^\s*\d+\.\s+/.test(lines[i])) items.push(lines[i++].replace(/^\s*\d+\.\s+/, ""));
-      blocks.push(<ol key={k++}>{items.map((t, j) => <li key={j}>{inline(t)}</li>)}</ol>);
+
+    /* blank */
+    if (!line.trim()) {
+      i++;
       continue;
     }
-    if (!line.trim()) { i++; continue; }
+
+    /* paragraph — watch for a setext heading underline */
     const buf: string[] = [];
-    while (i < lines.length && lines[i].trim() && !/^(```|#{1,4}\s|>\s?|\s*[-*]\s+|\s*\d+\.\s+)/.test(lines[i])) buf.push(lines[i++]);
+    while (
+      i < lines.length &&
+      lines[i].trim() &&
+      !isBlockStart(lines[i]) &&
+      !/^\s*=+\s*$/.test(lines[i])
+    ) {
+      buf.push(lines[i++]);
+    }
+    const next = lines[i] ?? "";
+    if (buf.length && /^\s*=+\s*$/.test(next)) {
+      blocks.push(<Heading key={k++} level={1}>{inline(buf.join(" "))}</Heading>);
+      i++;
+      continue;
+    }
+    if (buf.length && /^\s*-{2,}\s*$/.test(next) && !isDelimiterRow(next)) {
+      blocks.push(<Heading key={k++} level={2}>{inline(buf.join(" "))}</Heading>);
+      i++;
+      continue;
+    }
     blocks.push(<p key={k++}>{inline(buf.join(" "))}</p>);
   }
-  return <div className="md text-[15.5px] text-white/90">{blocks}</div>;
+
+  return <div className="md text-[16.5px] text-white/90">{blocks}</div>;
 }
 
 export const Markdown = memo(MarkdownImpl);

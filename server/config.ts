@@ -6,6 +6,7 @@ import {
   PROVIDERS,
   providerMeta,
   type Autonomy,
+  type McpServerConfig,
   type ModelInfo,
   type ProviderId,
   type ProviderView,
@@ -33,6 +34,19 @@ export interface HikesConfig {
   search: SearchConfig;
   tools: ToolFlags;
   autonomy: Autonomy;
+  mcp: { servers: McpServerConfig[] };
+  /**
+   * True once the onboarding wizard has been completed on this machine.
+   *
+   * This lives on disk rather than in the browser because the browser's
+   * storage is scoped to an origin, and the origin includes the port. A
+   * launch on a different port would otherwise look like a fresh install and
+   * put the user back through onboarding, with all their sessions waiting
+   * behind it.
+   */
+  onboarded: boolean;
+  /** A mirror of the interface state, so it survives a change of origin. */
+  ui?: Record<string, unknown>;
 }
 
 export const defaultDataDir = () => path.join(os.homedir(), ".hikes");
@@ -62,6 +76,8 @@ export function defaultConfig(): HikesConfig {
     search: { tavilyKey: "", braveKey: "" },
     tools: { web: true, code: true, files: true, memory: true },
     autonomy: "balanced",
+    mcp: { servers: [] },
+    onboarded: false,
   };
 }
 
@@ -118,8 +134,49 @@ function normalize(raw: unknown): HikesConfig {
     base.autonomy = data.autonomy;
   }
   if (typeof data.defaultModel === "string") base.defaultModel = data.defaultModel;
+
+  base.onboarded = Boolean(data.onboarded);
+  if (data.ui && typeof data.ui === "object" && !Array.isArray(data.ui)) {
+    base.ui = data.ui as Record<string, unknown>;
+  }
+
+  const mcp = data.mcp as Record<string, unknown> | undefined;
+  if (mcp && typeof mcp === "object" && Array.isArray(mcp.servers)) {
+    base.mcp.servers = mcp.servers
+      .map((entry): McpServerConfig | null => {
+        if (!entry || typeof entry !== "object") return null;
+        const raw = entry as Record<string, unknown>;
+        const command = stringOrDefault(raw.command, "").trim();
+        if (!command) return null;
+        const id = stringOrDefault(raw.id, "").trim() || slugify(stringOrDefault(raw.name, command));
+        const args = Array.isArray(raw.args)
+          ? raw.args.filter((arg): arg is string => typeof arg === "string")
+          : [];
+        const envRaw = (raw.env ?? {}) as Record<string, unknown>;
+        const env: Record<string, string> = {};
+        for (const [key, value] of Object.entries(envRaw)) {
+          if (typeof value === "string") env[key] = value;
+        }
+        return {
+          id,
+          name: stringOrDefault(raw.name, command).trim() || command,
+          command,
+          args,
+          env,
+          enabled: raw.enabled === undefined ? true : Boolean(raw.enabled),
+        };
+      })
+      .filter((entry): entry is McpServerConfig => entry !== null);
+  }
   return base;
 }
+
+const slugify = (value: string): string =>
+  value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 40) || "server";
 
 export interface ConfigStoreOptions {
   dataDir?: string;
@@ -344,6 +401,36 @@ export class ConfigStore {
       throw new Error("That workspace folder does not exist.");
     }
     this.state.workspace = resolved;
+    this.save();
+  }
+
+  setOnboarded(value: boolean): void {
+    this.state.onboarded = value;
+    this.save();
+  }
+
+  setUi(ui: Record<string, unknown>): void {
+    this.state.ui = ui;
+    this.save();
+  }
+
+  /* ───────────── MCP servers ───────────── */
+
+  mcpServers(): McpServerConfig[] {
+    return this.state.mcp.servers.map((server) => ({ ...server, args: [...server.args], env: { ...server.env } }));
+  }
+
+  upsertMcpServer(server: McpServerConfig): McpServerConfig[] {
+    const list = this.state.mcp.servers;
+    const index = list.findIndex((entry) => entry.id === server.id);
+    if (index >= 0) list[index] = server;
+    else list.push(server);
+    this.save();
+    return this.mcpServers();
+  }
+
+  removeMcpServer(id: string): void {
+    this.state.mcp.servers = this.state.mcp.servers.filter((entry) => entry.id !== id);
     this.save();
   }
 }

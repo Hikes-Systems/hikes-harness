@@ -1,7 +1,9 @@
 import fs from "node:fs";
 import path from "node:path";
 import { z } from "zod";
-import type { ToolDefinition, ToolResult } from "./types.ts";
+import type { FileChange } from "../../shared/protocol.ts";
+import { makeDiff } from "../lib/diff.ts";
+import type { ToolContext, ToolDefinition, ToolResult } from "./types.ts";
 import { ToolError } from "./types.ts";
 import {
   assertRealPathInside,
@@ -108,6 +110,13 @@ const writeSchema = z.object({
   content: z.string().max(MAX_WRITE_BYTES),
 });
 
+const editSchema = z.object({
+  path: z.string().min(1),
+  old_string: z.string().min(1).max(MAX_WRITE_BYTES),
+  new_string: z.string().max(MAX_WRITE_BYTES),
+  replace_all: z.boolean().optional(),
+});
+
 const searchSchema = z.object({
   query: z.string().min(2).max(200),
   path: z.string().optional(),
@@ -171,7 +180,50 @@ function readEntry(root: string, input: unknown): ToolResult {
   };
 }
 
-function writeEntry(root: string, input: unknown): ToolResult {
+/**
+ * Records the pre-edit contents of a file so the run can be reverted later,
+ * and returns the diff that the UI renders on the tool card.
+ */
+function recordChange(
+  ctx: ToolContext | undefined,
+  input: {
+    tool: string;
+    path: string;
+    before: string;
+    after: string;
+    beforeMissing: boolean;
+  },
+): FileChange {
+  const { diff, additions, deletions } = makeDiff(input.before, input.after);
+  let snapshotId: string | undefined;
+  if (ctx?.stepId && ctx.db) {
+    try {
+      const snapshot = ctx.db.addFileSnapshot({
+        sessionId: ctx.sessionId,
+        stepId: ctx.stepId,
+        path: input.path,
+        tool: input.tool,
+        before: input.before,
+        after: input.after,
+        beforeMissing: input.beforeMissing,
+      });
+      snapshotId = snapshot.id;
+    } catch {
+      /* a missing snapshot must never fail the write itself */
+    }
+  }
+  return {
+    path: input.path,
+    tool: input.tool,
+    additions,
+    deletions,
+    diff,
+    created: input.beforeMissing,
+    snapshotId,
+  };
+}
+
+function writeEntry(root: string, input: unknown, ctx?: ToolContext): ToolResult {
   const args = parseArgs(writeSchema, input);
   const absolute = resolveInWorkspace(root, args.path);
   const relative = displayPath(root, absolute);
@@ -182,7 +234,8 @@ function writeEntry(root: string, input: unknown): ToolResult {
   fs.mkdirSync(path.dirname(absolute), { recursive: true });
   assertRealPathInside(root, absolute);
 
-  const previous = fs.existsSync(absolute) ? fs.readFileSync(absolute, "utf8") : "";
+  const existed = fs.existsSync(absolute);
+  const previous = existed ? fs.readFileSync(absolute, "utf8") : "";
   const before = previous ? previous.split(/\r?\n/).length : 0;
   const after = args.content ? args.content.split(/\r?\n/).length : 0;
 
@@ -200,11 +253,109 @@ function writeEntry(root: string, input: unknown): ToolResult {
   }
 
   const delta = previous ? `${after - before >= 0 ? "+" : ""}${after - before} lines` : `${after} lines`;
+  const change = recordChange(ctx, {
+    tool: "write_file",
+    path: relative,
+    before: previous,
+    after: args.content,
+    beforeMissing: !existed,
+  });
   return {
     ok: true,
     summary: `Wrote ${Buffer.byteLength(args.content, "utf8")} bytes to ${relative} (${delta})`,
     detail: relative,
     output: `Updated ${relative}\n${delta}`,
+    changes: [change],
+  };
+}
+
+function editEntry(root: string, input: unknown, ctx?: ToolContext): ToolResult {
+  const args = parseArgs(editSchema, input);
+  const absolute = resolveInWorkspace(root, args.path);
+  const relative = displayPath(root, absolute);
+  assertNotSensitive(relative);
+  if (!fs.existsSync(absolute)) {
+    throw new ToolError(`File not found: ${relative}. Use write_file to create a new file.`);
+  }
+  assertRealPathInside(root, absolute);
+  const stat = fs.statSync(absolute);
+  if (!stat.isFile()) throw new ToolError("That path is a directory.");
+  if (stat.size > MAX_WRITE_BYTES) {
+    throw new ToolError(`File is too large to edit (${stat.size} bytes; limit ${MAX_WRITE_BYTES}).`);
+  }
+
+  const buffer = fs.readFileSync(absolute);
+  if (isBinary(buffer)) throw new ToolError("That file looks binary.");
+  const text = buffer.toString("utf8");
+  if (args.old_string === args.new_string) {
+    throw new ToolError("old_string and new_string are identical; nothing to change.");
+  }
+
+  // Match the file's line endings when the model sent plain newlines.
+  let pattern = args.old_string;
+  let replacement = args.new_string;
+  let matches = text.split(pattern).length - 1;
+  if (matches === 0 && text.includes("\r\n")) {
+    pattern = args.old_string.replace(/\r?\n/g, "\r\n");
+    replacement = args.new_string.replace(/\r?\n/g, "\r\n");
+    matches = text.split(pattern).length - 1;
+  }
+
+  if (matches === 0) {
+    throw new ToolError(
+      `Could not find old_string in ${relative}. Read the file again and copy the exact text, including indentation.`,
+    );
+  }
+  if (matches > 1 && !args.replace_all) {
+    throw new ToolError(
+      `old_string appears ${matches} times in ${relative}. Add more surrounding context or set replace_all to true.`,
+    );
+  }
+
+  const first = text.indexOf(pattern);
+  const line = text.slice(0, first).split(/\r?\n/).length;
+  const updated = args.replace_all
+    ? text.split(pattern).join(replacement)
+    : text.slice(0, first) + replacement + text.slice(first + pattern.length);
+
+  const tmp = `${absolute}.${process.pid}.tmp`;
+  fs.writeFileSync(tmp, updated, "utf8");
+  try {
+    fs.renameSync(tmp, absolute);
+  } catch {
+    fs.writeFileSync(absolute, updated, "utf8");
+    try {
+      fs.unlinkSync(tmp);
+    } catch {
+      /* ignore */
+    }
+  }
+
+  const before = text.split(/\r?\n/).length;
+  const after = updated.split(/\r?\n/).length;
+  const delta = after - before;
+  const count = args.replace_all ? matches : 1;
+  const preview = (value: string) => {
+    const flat = value.trim();
+    return flat.length > 240 ? `${flat.slice(0, 240)}…` : flat;
+  };
+  const change = recordChange(ctx, {
+    tool: "edit_file",
+    path: relative,
+    before: text,
+    after: updated,
+    beforeMissing: false,
+  });
+  return {
+    ok: true,
+    summary: `Edited ${relative} · ${count} replacement${count === 1 ? "" : "s"} · ${delta >= 0 ? "+" : ""}${delta} lines`,
+    detail: relative,
+    output: [
+      `Updated ${relative} at line ${line} (${count} replacement${count === 1 ? "" : "s"}).`,
+      `- ${preview(pattern)}`,
+      `+ ${preview(replacement)}`,
+    ].join("\n"),
+    changes: [change],
   };
 }
 
@@ -302,7 +453,7 @@ export function fileTools(root: string): ToolDefinition[] {
       risk: "write",
       spec: {
         name: "write_file",
-        description: "Create or overwrite a text file inside the workspace. This is a write operation and may require approval.",
+        description: "Create or overwrite a text file inside the workspace. Prefer edit_file for changing part of a file. May require approval.",
         parameters: {
           type: "object",
           properties: {
@@ -312,7 +463,29 @@ export function fileTools(root: string): ToolDefinition[] {
           required: ["path", "content"],
         },
       },
-      run: async (args) => writeEntry(root, args),
+      run: async (args, ctx) => writeEntry(root, args, ctx),
+    },
+    {
+      risk: "write",
+      spec: {
+        name: "edit_file",
+        description:
+          "Replace an exact snippet in an existing workspace file. Read the file first and include enough context that old_string occurs once. Set replace_all to replace every occurrence.",
+        parameters: {
+          type: "object",
+          properties: {
+            path: { type: "string", description: "Relative file path." },
+            old_string: {
+              type: "string",
+              description: "Exact text to replace, including indentation. Must occur once unless replace_all is true.",
+            },
+            new_string: { type: "string", description: "Replacement text." },
+            replace_all: { type: "boolean", description: "Replace every occurrence. Defaults to false." },
+          },
+          required: ["path", "old_string", "new_string"],
+        },
+      },
+      run: async (args, ctx) => editEntry(root, args, ctx),
     },
     {
       risk: "safe",

@@ -10,7 +10,7 @@ import { cn } from "../utils/cn";
 type StepDef = { key: string; label?: string; title?: string; sub?: string };
 const STEPS: StepDef[] = [
   { key: "welcome" },
-  { key: "you", label: "You", title: "Let's get acquainted", sub: "A few quick questions so Ridgeline can tailor itself to you." },
+  { key: "you", label: "You", title: "Let's get acquainted", sub: "A few quick questions so Hikes can tailor itself to you." },
   { key: "models", label: "Models", title: "Connect your models", sub: "Bring your own keys or a local endpoint. At least one provider is required — change it anytime." },
   { key: "agent", label: "Agent", title: "Set up your agent", sub: "Pick a default model, the tools it can reach for, and how independent it should be." },
   { key: "sky", label: "Sky", title: "Choose your sky", sub: "Make it yours. The mountains behind this card update live." },
@@ -49,7 +49,7 @@ function Launching({ onDone }: { onDone: () => void }) {
 }
 
 export function Wizard() {
-  const { state, set } = useStore();
+  const { state, set, completeSetup } = useStore();
   const { boot, saveSettings } = useServer();
   const [step, setStep] = useState(0);
   const [dir, setDir] = useState<"fwd" | "back">("fwd");
@@ -88,7 +88,7 @@ export function Wizard() {
     <div className="relative z-10 grid h-full w-full place-items-center p-3 sm:p-6">
       <Glass radius={36} strength="lg" animate className="h-[min(680px,92dvh)] w-[min(96vw,780px)]" contentClassName="h-full">
         {launching ? (
-          <Launching onDone={() => set({ onboarded: true })} />
+          <Launching onDone={completeSetup} />
         ) : step === 0 ? (
           <div key="welcome" className="a-step flex h-full flex-col items-center justify-center px-6 text-center sm:px-14">
             <div className="glass-css relative mb-8 grid h-24 w-24 place-items-center rounded-full">
@@ -97,7 +97,7 @@ export function Wizard() {
             </div>
             <p className="mb-3 text-[12px] font-medium uppercase tracking-[0.3em] text-white/60">Agent harness</p>
             <h1 className="font-serif text-[56px] leading-[0.98] sm:text-[80px]">
-              Meet <span className="italic accent-text">Ridgeline</span>
+              Meet <span className="italic accent-text">Hikes</span>
             </h1>
             <p className="mt-6 max-w-md text-[16.5px] leading-relaxed text-white/75">
               Bring any model, hand it tools, and watch it work — all beneath a sky of liquid glass. Setup takes about a minute.
@@ -152,7 +152,7 @@ export function Wizard() {
                   <span className="hidden text-[12.5px] text-amber-100/80 sm:block">Connect a provider to continue</span>
                 )}
                 <Button variant="primary" size="lg" disabled={!canNext || (last && models.length === 0)} onClick={next}>
-                  {last ? "Launch Ridgeline" : "Continue"} {last ? <Rocket className="h-4 w-4" /> : <ArrowRight className="h-4 w-4" />}
+                  {last ? "Launch Hikes" : "Continue"} {last ? <Rocket className="h-4 w-4" /> : <ArrowRight className="h-4 w-4" />}
                 </Button>
               </div>
             </div>

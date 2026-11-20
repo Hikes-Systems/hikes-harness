@@ -20,7 +20,7 @@ import { STEP_ICON } from "./Chat";
 import { useServer } from "../lib/server";
 import { useStore } from "../store";
 import { providerMeta } from "@shared/providers";
-import type { Msg, Source, SubAgentTask } from "../lib/types";
+import type { Msg, Session, Source, SubAgentTask } from "../lib/types";
 import { cn } from "../utils/cn";
 
 function Stat({ label, value }: { label: string; value: string }) {
@@ -119,7 +119,17 @@ function SourceRow({ source }: { source: Source }) {
   );
 }
 
-export function Inspector({ run, prompt, onClose }: { run?: Msg; prompt?: Msg; onClose: () => void }) {
+export function Inspector({
+  run,
+  prompt,
+  session,
+  onClose,
+}: {
+  run?: Msg;
+  prompt?: Msg;
+  session?: Session;
+  onClose: () => void;
+}) {
   const { state } = useStore();
   const { boot } = useServer();
   const running = run?.status === "running";
@@ -136,7 +146,30 @@ export function Inspector({ run, prompt, onClose }: { run?: Msg; prompt?: Msg; o
 
   const promptChars = (prompt?.full ?? prompt?.text ?? "").length;
   const provider = run?.provider ? providerMeta(run.provider).name : "";
+  const cachedTokens = usage?.cachedTokens ?? 0;
   const toolCalls = steps.filter((step) => step.tool).length + subagents.reduce((sum, task) => sum + (task.result?.toolCalls ?? 0), 0);
+
+  const cost = usage?.costUsd;
+  const contextWindow = usage?.contextWindow;
+  const contextUsed = usage?.contextUsed;
+
+  const totals = useMemo(() => {
+    let input = 0;
+    let output = 0;
+    let spent = 0;
+    let priced = false;
+    for (const message of session?.messages ?? []) {
+      const u = message.usage;
+      if (!u) continue;
+      input += u.inputTokens ?? 0;
+      output += u.outputTokens ?? 0;
+      if (u.costUsd !== undefined) {
+        spent += u.costUsd;
+        priced = true;
+      }
+    }
+    return { input, output, spent, priced };
+  }, [session?.messages]);
 
   const sources = useMemo(() => {
     const out: Source[] = [];
@@ -153,7 +186,7 @@ export function Inspector({ run, prompt, onClose }: { run?: Msg; prompt?: Msg; o
   }, [steps, subagents]);
 
   return (
-    <div className="glass-css a-slide-r flex h-full w-full flex-col rounded-[30px] p-4">
+    <div className="glass-css flex h-full w-full flex-col rounded-[30px] p-4">
       <div className="mb-4 flex items-center justify-between">
         <div className="flex items-center gap-2.5">
           <Activity className="h-[18px] w-[18px] accent-text" />
@@ -199,6 +232,46 @@ export function Inspector({ run, prompt, onClose }: { run?: Msg; prompt?: Msg; o
               <Stat label="Tool calls" value={String(toolCalls)} />
               <Stat label="Latency" value={run.ms ? `${(run.ms / 1000).toFixed(1)}s` : running ? "…" : "—"} />
             </div>
+
+            {cachedTokens > 0 && (
+              <p className="text-[11.5px] leading-relaxed text-white/45">
+                {compact(cachedTokens)} prompt tokens came from the provider&apos;s cache — they were
+                paid for once and reused.
+              </p>
+            )}
+
+            {(cost !== undefined || contextWindow) && (
+              <div className="grid grid-cols-2 gap-2">
+                <Stat
+                  label="Cost"
+                  value={cost === undefined ? "—" : cost === 0 ? "$0.00" : cost < 0.01 ? `$${cost.toFixed(4)}` : `$${cost.toFixed(2)}`}
+                />
+                <Stat
+                  label="Context"
+                  value={
+                    contextWindow
+                      ? `${contextUsed !== undefined ? `${Math.round(contextUsed * 100)}% of ` : ""}${compact(contextWindow)}`
+                      : "—"
+                  }
+                />
+              </div>
+            )}
+
+            {session && (totals.input > 0 || totals.output > 0) && (
+              <div className="rounded-2xl bg-white/[0.07] px-4 py-3 shadow-[inset_0_1px_0_rgba(255,255,255,.18)]">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10.5px] uppercase tracking-[0.14em] text-white/45">Session total</span>
+                  <span className="font-mono text-[11px] text-white/45">
+                    {totals.priced ? `$${totals.spent < 0.01 ? totals.spent.toFixed(4) : totals.spent.toFixed(2)}` : "cost n/a"}
+                  </span>
+                </div>
+                <div className="mt-1.5 flex items-center gap-3 font-mono text-[12px] text-white/70">
+                  <span>{compact(totals.input)} in</span>
+                  <span>{compact(totals.output)} out</span>
+                  <span>{compact(totals.input + totals.output)} total</span>
+                </div>
+              </div>
+            )}
 
             {promptChars > 0 && (
               <div className="flex items-center justify-between px-1 text-[11.5px] text-white/40">

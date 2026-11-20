@@ -1,5 +1,7 @@
 import type {
   Bootstrap,
+  McpServerConfig,
+  McpServerStatus,
   ProviderId,
   RunEvent,
   RunRequest,
@@ -11,21 +13,30 @@ import type {
 
 const TOKEN_KEY = "hikes:token";
 
+/**
+ * Reads the launch token from the URL and stores it for later requests.
+ *
+ * The launcher opens the UI with `?hikes_token=…`. Older links used the hash
+ * (`#hikes_token=…`), and the API also accepts `?token=`, so all three are
+ * accepted and then stripped from the address bar.
+ */
 function captureToken(): string {
   if (typeof window === "undefined") return "";
   let token = "";
   try {
     const hash = window.location.hash.replace(/^#/, "");
     const hashParams = new URLSearchParams(hash);
-    const fromHash = hashParams.get("hikes_token");
     const searchParams = new URLSearchParams(window.location.search);
-    const fromQuery = searchParams.get("token");
-    token = fromHash || fromQuery || "";
+    const fromHash = hashParams.get("hikes_token");
+    const fromQuery = searchParams.get("hikes_token");
+    const fromLegacyQuery = searchParams.get("token");
+    token = fromQuery || fromHash || fromLegacyQuery || "";
     const storage = window.localStorage;
     if (token) storage.setItem(TOKEN_KEY, token);
     else token = storage.getItem(TOKEN_KEY) || "";
-    if (fromHash || fromQuery) {
+    if (fromHash || fromQuery || fromLegacyQuery) {
       hashParams.delete("hikes_token");
+      searchParams.delete("hikes_token");
       searchParams.delete("token");
       const nextHash = hashParams.toString();
       const nextSearch = searchParams.toString();
@@ -96,7 +107,7 @@ export async function listSessions(): Promise<SessionSummary[]> {
   return data.sessions;
 }
 
-export async function createSession(agent = "ridge"): Promise<Session> {
+export async function createSession(agent = "hikes"): Promise<Session> {
   const data = await request<{ session: Session }>("/sessions", {
     method: "POST",
     body: JSON.stringify({ agent }),
@@ -124,6 +135,65 @@ export async function deleteSession(id: string): Promise<void> {
   await request<{ ok: boolean }>(`/sessions/${encodeURIComponent(id)}`, { method: "DELETE" });
 }
 
+/* ───────────── snapshots & compaction ───────────── */
+
+export interface RevertResult {
+  ok: boolean;
+  reverted: string[];
+}
+
+export async function revertStep(sessionId: string, stepId: string): Promise<RevertResult> {
+  return request<RevertResult>(
+    `/sessions/${encodeURIComponent(sessionId)}/steps/${encodeURIComponent(stepId)}/revert`,
+    { method: "POST" },
+  );
+}
+
+export interface CompactResult {
+  ok: boolean;
+  compactedMessages: number;
+  savedTokens: number;
+  digest: string;
+}
+
+export async function compactSession(sessionId: string): Promise<CompactResult> {
+  return request<CompactResult>(`/sessions/${encodeURIComponent(sessionId)}/compact`, {
+    method: "POST",
+  });
+}
+
+/* ───────────── MCP servers ───────────── */
+
+export async function listMcpServers(): Promise<McpServerStatus[]> {
+  const data = await request<{ servers: McpServerStatus[] }>("/mcp/servers");
+  return data.servers;
+}
+
+export async function saveMcpServer(
+  server: McpServerConfig,
+): Promise<McpServerStatus[]> {
+  const data = await request<{ servers: McpServerStatus[] }>("/mcp/servers", {
+    method: "POST",
+    body: JSON.stringify(server),
+  });
+  return data.servers;
+}
+
+export async function deleteMcpServer(id: string): Promise<McpServerStatus[]> {
+  const data = await request<{ servers: McpServerStatus[] }>(`/mcp/servers/${encodeURIComponent(id)}`, {
+    method: "DELETE",
+  });
+  return data.servers;
+}
+
+export async function testMcpServer(id: string): Promise<McpServerStatus> {
+  const data = await request<{ ok: boolean; server: McpServerStatus }>(
+    `/mcp/servers/${encodeURIComponent(id)}/verify`,
+    { method: "POST" },
+  );
+  return data.server;
+}
+
 /* ───────────── providers & settings ───────────── */
 
 export async function saveProvider(
@@ -143,7 +213,7 @@ export async function testProvider(
   id: ProviderId,
   draft: { apiKey?: string; baseUrl?: string; customModel?: string },
 ): Promise<TestProviderResult> {
-  return request<TestProviderResult>(`/providers/${id}/test`, {
+  return request<TestProviderResult>(`/providers/${id}/verify`, {
     method: "POST",
     body: JSON.stringify(draft),
   });
@@ -163,8 +233,10 @@ export interface MemoryEntry {
   created_at: number;
 }
 
-export async function listMemory(): Promise<MemoryEntry[]> {
-  const data = await request<{ memories: MemoryEntry[] }>("/memory");
+export async function listMemory(query?: string): Promise<MemoryEntry[]> {
+  const trimmed = (query ?? "").trim();
+  const suffix = trimmed ? `?q=${encodeURIComponent(trimmed)}` : "";
+  const data = await request<{ memories: MemoryEntry[] }>(`/memory${suffix}`);
   return data.memories;
 }
 

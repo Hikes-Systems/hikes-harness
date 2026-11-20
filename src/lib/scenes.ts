@@ -21,7 +21,7 @@ export const SCENES: SceneDef[] = [
   {
     id: "dusk",
     name: "Alpine Dusk",
-    blurb: "Violet ridges, rose horizon",
+    blurb: "Violet peaks, rose horizon",
     sky: ["#0b0b33", "#2a1a63", "#6d3b95", "#e5688a", "#ffb58e"],
     peaks: ["#9a63a8", "#6a4399", "#46308a", "#2a2068", "#150f3b"],
     fog: "#ff9e9a",
@@ -62,7 +62,7 @@ export const SCENES: SceneDef[] = [
   },
   {
     id: "ember",
-    name: "Ember Ridge",
+    name: "Ember Dusk",
     blurb: "Molten sky, charcoal summits",
     sky: ["#12051d", "#38103c", "#7c1f4c", "#d9482f", "#ffa94d"],
     peaks: ["#9b3a5c", "#702a58", "#4b1d4e", "#2d1240", "#160824"],

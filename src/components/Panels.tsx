@@ -4,6 +4,8 @@ import {
   BookOpen,
   Brain,
   CheckCircle2,
+  Clock,
+  Database,
   ExternalLink,
   FileText,
   FolderOpen,
@@ -11,10 +13,15 @@ import {
   Globe,
   HardDrive,
   Image,
+  Info,
   KeyRound,
+  Keyboard,
   Link2,
+  RefreshCw,
   RotateCcw,
+  Search,
   SearchCheck,
+  Server,
   ShieldCheck,
   Terminal,
   Trash2,
@@ -24,11 +31,24 @@ import {
   Zap,
 } from "lucide-react";
 import { Button, Chip, Field, Segmented, Spinner, TextInput, Toggle } from "./ui";
+import {
+  deleteMcpServer,
+  deleteMemory,
+  listMemory,
+  listMcpServers,
+  saveMcpServer,
+  testMcpServer,
+  type MemoryEntry,
+} from "../lib/api";
 import { useServer } from "../lib/server";
 import { useStore, type Autonomy, type Tone } from "../store";
+import { AGENTS } from "@shared/agents";
+import { MASCOTS, resolveAgent } from "../lib/mascots";
 import { PROVIDERS, providerMeta, type ProviderId } from "@shared/providers";
+import { ProviderLogo } from "./ProviderLogo";
 import { SCENES } from "../lib/scenes";
 import { DEFAULT_WALLPAPER, WALLPAPERS, prepareWallpaper } from "../lib/wallpaper";
+import type { McpServerStatus } from "../lib/types";
 import { cn } from "../utils/cn";
 
 const ROLES = ["Developer", "Designer", "Researcher", "Founder", "Writer", "Student", "Analyst", "Something else"];
@@ -65,6 +85,37 @@ export function ProfilePanel({ autoFocus }: { autoFocus?: boolean }) {
         <Segmented value={p.tone} options={TONES.map((t) => ({ id: t.id, label: t.label }))} onChange={(tone) => setProfile({ tone })} />
         <p className="mt-2 px-1 text-[13px] text-white/55">{TONES.find((t) => t.id === p.tone)?.hint}</p>
       </Field>
+    </div>
+  );
+}
+
+export function GeneralPanel({ autoFocus }: { autoFocus?: boolean }) {
+  const { state, set } = useStore();
+  return (
+    <div className="space-y-7">
+      <ProfilePanel autoFocus={autoFocus} />
+      <div className="h-px bg-white/10" />
+      <Field label="Default answer mode" hint="Used for every new message">
+        <div className="flex items-center gap-3 rounded-2xl bg-white/[0.05] px-3.5 py-3 shadow-[inset_0_1px_0_rgba(255,255,255,.12)]">
+          <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-white/[0.08]">
+            <SearchCheck className="h-[18px] w-[18px] text-white/80" />
+          </span>
+          <div className="min-w-0 flex-1">
+            <div className="text-[14px] font-medium">Deep research first</div>
+            <div className="text-[12px] leading-relaxed text-white/55">
+              Gathers and reads sources in stages before writing the answer. Slower, but grounded.
+            </div>
+          </div>
+          <Toggle
+            on={state.researchMode}
+            onChange={(value) => set({ researchMode: value })}
+            label="Deep research by default"
+          />
+        </div>
+      </Field>
+      <p className="px-1 text-[12.5px] leading-relaxed text-white/45">
+        Your name, role, goals and response style travel with each run so the agent can adapt. Nothing here leaves this machine except the request to your chosen model provider.
+      </p>
     </div>
   );
 }
@@ -195,7 +246,9 @@ export function ProvidersPanel() {
                 key={p.id} onClick={() => setFocus(p.id)}
                 className={cn("glass-hover flex shrink-0 items-center gap-3 rounded-2xl px-3 py-2.5 text-left outline-none transition-[background-color,box-shadow,transform]", on ? "sel-on" : "glass-css hover:bg-white/10")}
               >
-                <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl text-[15px] font-semibold text-[#1b1038]" style={{ background: `linear-gradient(145deg, ${p.grad[0]}, ${p.grad[1]})`, boxShadow: "inset 0 1px 0 rgba(255,255,255,.7), 0 4px 10px rgba(0,0,0,.25)" }}>{p.mono}</span>
+                <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-white/92 shadow-[0_4px_10px_rgba(0,0,0,.25)] ring-1 ring-white/60">
+                  <ProviderLogo id={p.id} className="h-5 w-5" />
+                </span>
                 <span className="min-w-0 flex-1">
                   <span className="block truncate text-[14px] font-medium">{p.name}</span>
                   <span className="block text-[11.5px] text-white/50">{providerState(p.id)}</span>
@@ -333,8 +386,9 @@ function InfoRow({ icon: Icon, label, value, mono = true }: { icon: typeof User;
 
 export function AgentPanel() {
   const { boot, saveSettings } = useServer();
-  const { state, set, setTools } = useStore();
+  const { state, set, setTools, setAgentIdentity, resetAgentIdentity } = useStore();
   const [error, setError] = useState<string | null>(null);
+  const [mascotFor, setMascotFor] = useState<string | null>(null);
   const [workspace, setWorkspace] = useState(boot?.workspace ?? "");
   const [workspaceState, setWorkspaceState] = useState<"idle" | "saving" | "ok">("idle");
   const models = boot?.models ?? [];
@@ -388,6 +442,98 @@ export function AgentPanel() {
 
   return (
     <div className="space-y-6">
+      <Field label="Agent identities" hint="Names and mascots">
+        <div className="space-y-2">
+          {AGENTS.map((definition) => {
+            const agent = resolveAgent(definition.id, state.agents);
+            const Icon = agent.Icon;
+            const picker = mascotFor === agent.id;
+            return (
+              <div
+                key={agent.id}
+                className="rounded-2xl bg-white/[0.06] p-3 shadow-[inset_0_1px_0_rgba(255,255,255,.14)]"
+              >
+                <div className="flex items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setMascotFor(picker ? null : agent.id)}
+                    className={cn(
+                      "grid h-11 w-11 shrink-0 place-items-center rounded-2xl outline-none transition-colors",
+                      picker ? "sel-on" : "glass-css glass-hover",
+                    )}
+                    aria-label={`Choose mascot for ${agent.name}`}
+                    aria-expanded={picker}
+                    title="Choose mascot"
+                  >
+                    <Icon className="h-5 w-5 accent-text" />
+                  </button>
+                  <div className="min-w-0 flex-1">
+                    <div className="mb-1 flex items-center gap-2">
+                      <span className="text-[10.5px] uppercase tracking-[0.14em] text-white/40">{agent.desc}</span>
+                      {agent.customized && (
+                        <span className="rounded-full bg-white/10 px-1.5 py-[1px] text-[9px] uppercase tracking-[0.1em] text-white/50">
+                          Custom
+                        </span>
+                      )}
+                    </div>
+                    <input
+                      value={state.agents[agent.id]?.name ?? ""}
+                      onChange={(event) => setAgentIdentity(agent.id, { name: event.target.value })}
+                      onBlur={() => {
+                        if (!state.agents[agent.id]?.name.trim()) resetAgentIdentity(agent.id);
+                      }}
+                      maxLength={40}
+                      placeholder={definition.name}
+                      aria-label={`Name for ${definition.name}`}
+                      className="h-9 w-full rounded-xl bg-white/[0.07] px-3 text-[14px] text-white shadow-[inset_0_0_0_1px_rgba(255,255,255,.08)] outline-none transition-shadow focus:shadow-[inset_0_0_0_1px_rgba(255,255,255,.35)]"
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => resetAgentIdentity(agent.id)}
+                    disabled={!agent.customized}
+                    className="grid h-9 w-9 shrink-0 place-items-center rounded-full text-white/60 outline-none transition-colors hover:bg-white/12 hover:text-white disabled:pointer-events-none disabled:opacity-25"
+                    aria-label={`Reset ${agent.name}`}
+                    title="Reset name and mascot"
+                  >
+                    <RotateCcw className="h-4 w-4" />
+                  </button>
+                </div>
+                {picker && (
+                  <div className="mt-3 grid grid-cols-8 gap-1.5">
+                    {MASCOTS.map((mascot) => {
+                      const Mascot = mascot.Icon;
+                      const on = mascot.id === agent.identity.mascot;
+                      return (
+                        <button
+                          key={mascot.id}
+                          type="button"
+                          onClick={() => {
+                            setAgentIdentity(agent.id, { mascot: mascot.id });
+                            setMascotFor(null);
+                          }}
+                          className={cn(
+                            "grid h-8 place-items-center rounded-xl outline-none transition-colors",
+                            on ? "sel-on accent-text" : "bg-white/[0.05] text-white/60 hover:bg-white/12 hover:text-white",
+                          )}
+                          aria-label={mascot.label}
+                          aria-pressed={on}
+                          title={mascot.label}
+                        >
+                          <Mascot className="h-4 w-4" />
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+        <p className="mt-2 px-1 text-[12.5px] text-white/50">
+          Names and mascots appear in the header, session list and the agent&apos;s system prompt.
+        </p>
+      </Field>
       <Field label="Workspace" hint="Used by the file and shell tools">
         <div className="flex flex-col gap-2 sm:flex-row">
           <div className="min-w-0 flex-1">
@@ -433,7 +579,9 @@ export function AgentPanel() {
                         </span>
                       )}
                     </span>
-                    <span className="shrink-0 text-[10.5px] uppercase tracking-wider text-white/45">{providerMeta(m.provider).name.split(" ")[0]}</span>
+                    <span className="grid h-5 w-5 shrink-0 place-items-center rounded-md bg-white/90" title={providerMeta(m.provider).name}>
+                      <ProviderLogo id={m.provider} className="h-3.5 w-3.5" />
+                    </span>
                   </span>
                   <span className="mt-0.5 block truncate text-[12px] text-white/55">{m.desc}</span>
                 </button>
@@ -517,7 +665,7 @@ export function AtmospherePanel() {
                 <span
                   className="relative block h-[76px] overflow-hidden rounded-[18px]"
                   style={{
-                    background: custom && wp.image ? `url("${wp.image}") center / cover no-repeat` : preset.preview,
+                    background: custom && wp.image ? `url("${wp.image}") center / ${wp.fit ?? "cover"} no-repeat` : preset.preview,
                     backgroundSize: preset.id === "grid" ? "22px 22px, 22px 22px, cover, cover" : undefined,
                   }}
                 >
@@ -558,6 +706,19 @@ export function AtmospherePanel() {
           )}
         </div>
         {error && <p className="mt-2 flex items-center gap-1.5 px-1 text-[12.5px] text-amber-200"><AlertTriangle className="h-3.5 w-3.5" /> {error}</p>}
+        {wp.id === "custom" && wp.image && (
+          <div className="mt-3 flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-white/[0.05] px-4 py-3 shadow-[inset_0_1px_0_rgba(255,255,255,.12)]">
+            <div>
+              <div className="text-[13px] text-white/75">Image fit</div>
+              <div className="text-[11.5px] text-white/45">Cover fills the window; contain shows the whole image.</div>
+            </div>
+            <Segmented
+              value={wp.fit ?? "cover"}
+              options={[{ id: "cover", label: "Cover" }, { id: "contain", label: "Contain" }]}
+              onChange={(fit) => patch({ fit })}
+            />
+          </div>
+        )}
       </Field>
 
       <Field label="Background tuning">
@@ -613,12 +774,383 @@ export function AtmospherePanel() {
         </div>
         <div className="glass-css rounded-2xl px-4 py-3">
           <div className="mb-2 flex items-center gap-2"><BookOpen className="h-4 w-4 text-white/80" /><span className="text-[14px] font-medium">Glass quality</span></div>
-          <Segmented value={state.quality} options={[{ id: "full", label: "Liquid" }, { id: "lite", label: "Lite" }]} onChange={(quality) => set({ quality })} />
+          <Segmented value="lite" options={[{ id: "lite", label: "Lite" }]} onChange={() => undefined} />
+          <p className="mt-2 text-[12px] leading-relaxed text-white/50">Lite is the stable mode. The liquid refraction is being reworked and returns in a future update.</p>
         </div>
       </div>
       <div className="flex items-start justify-between gap-3 px-1">
-        <p className="text-[12.5px] leading-relaxed text-white/50">The shell is a single curved glass surface. Liquid mode adds live refraction inside panels and looks best in Chrome, Edge and Brave. Switch to Lite if your device feels warm.</p>
+        <p className="text-[12.5px] leading-relaxed text-white/50">The shell is a single curved glass surface, with real refraction at its rim. Lite keeps the whole scene at full speed on every device.</p>
         <Button variant="ghost" size="sm" onClick={() => set({ wallpaper: { ...DEFAULT_WALLPAPER } })}><RotateCcw className="h-3.5 w-3.5" /> Reset</Button>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * MCP servers. Each one is a local process that speaks the Model Context
+ * Protocol over stdio; the agent can call its tools with the normal
+ * approval policy.
+ */
+export function McpPanel() {
+  const [servers, setServers] = useState<McpServerStatus[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [name, setName] = useState("");
+  const [command, setCommand] = useState("");
+  const [args, setArgs] = useState("");
+  const [env, setEnv] = useState("");
+  const [reload, setReload] = useState(0);
+
+  useEffect(() => {
+    let alive = true;
+    listMcpServers()
+      .then((list) => {
+        if (alive) setServers(list);
+      })
+      .catch((caught) => {
+        if (alive) setError(caught instanceof Error ? caught.message : String(caught));
+      });
+    return () => {
+      alive = false;
+    };
+  }, [reload]);
+
+  const parseEnv = (value: string): Record<string, string> => {
+    const out: Record<string, string> = {};
+    for (const line of value.split(/\r?\n/)) {
+      const trimmed = line.trim();
+      if (!trimmed) continue;
+      const index = trimmed.indexOf("=");
+      if (index <= 0) continue;
+      out[trimmed.slice(0, index).trim()] = trimmed.slice(index + 1).trim();
+    }
+    return out;
+  };
+
+  const add = async () => {
+    if (!command.trim()) {
+      setError("An MCP server needs a command, for example npx or a path to a server.");
+      return;
+    }
+    setBusy("add");
+    setError(null);
+    try {
+      setServers(
+        await saveMcpServer({
+          id: "",
+          name: name.trim() || command.trim(),
+          command: command.trim(),
+          args: args.trim() ? args.trim().split(/\s+/) : [],
+          env: parseEnv(env),
+          enabled: true,
+        }),
+      );
+      setName("");
+      setCommand("");
+      setArgs("");
+      setEnv("");
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : String(caught));
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const test = async (id: string) => {
+    setBusy(id);
+    setError(null);
+    try {
+      const status = await testMcpServer(id);
+      setServers((prev) => prev?.map((entry) => (entry.id === id ? status : entry)) ?? prev);
+      if (!status.connected && status.error) setError(status.error);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : String(caught));
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const remove = async (id: string) => {
+    setBusy(id);
+    setError(null);
+    try {
+      setServers(await deleteMcpServer(id));
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : String(caught));
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  return (
+    <div className="space-y-6">
+      <Field label="MCP servers" hint="Local tools over the Model Context Protocol">
+        {servers === null ? (
+          <div className="flex items-center gap-2 px-1 text-[13px] text-white/50">
+            <Spinner className="h-4 w-4" /> Loading servers…
+          </div>
+        ) : servers.length === 0 ? (
+          <p className="px-1 text-[13px] text-white/50">
+            No MCP servers yet. Add one below and its tools become available to the agent.
+          </p>
+        ) : (
+          <div className="space-y-2">
+            {servers.map((server) => (
+              <div
+                key={server.id}
+                className="flex flex-wrap items-center gap-3 rounded-2xl bg-white/[0.05] px-4 py-3 shadow-[inset_0_1px_0_rgba(255,255,255,.12)]"
+              >
+                <span className={cn("grid h-9 w-9 shrink-0 place-items-center rounded-xl", server.connected ? "bg-emerald-300/15 text-emerald-100" : "bg-white/10 text-white/60")}>
+                  <Server className="h-[18px] w-[18px]" />
+                </span>
+                <div className="min-w-0 flex-1">
+                  <div className="truncate text-[14px] font-medium">{server.name}</div>
+                  <div className="truncate font-mono text-[11.5px] text-white/45">
+                    {server.command}
+                    {server.args.length ? ` ${server.args.join(" ")}` : ""}
+                  </div>
+                  {server.connected ? (
+                    <div className="mt-0.5 truncate text-[11.5px] text-emerald-200/80">
+                      {server.tools.length} tool{server.tools.length === 1 ? "" : "s"}
+                      {server.tools.length ? ` · ${server.tools.map((tool) => tool.name).join(", ")}` : ""}
+                    </div>
+                  ) : server.error ? (
+                    <div className="mt-0.5 truncate text-[11.5px] text-amber-200/80">{server.error}</div>
+                  ) : (
+                    <div className="mt-0.5 text-[11.5px] text-white/35">Not started</div>
+                  )}
+                </div>
+                <div className="flex shrink-0 items-center gap-1.5">
+                  <Button variant="ghost" size="sm" disabled={busy === server.id} onClick={() => void test(server.id)}>
+                    {busy === server.id ? <Spinner className="h-3.5 w-3.5" /> : <Zap className="h-3.5 w-3.5" />} Test
+                  </Button>
+                  <button
+                    onClick={() => void remove(server.id)}
+                    disabled={busy === server.id}
+                    className="grid h-8 w-8 place-items-center rounded-full text-white/45 transition hover:bg-white/12 hover:text-white disabled:opacity-40"
+                    aria-label={`Remove ${server.name}`}
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </Field>
+
+      <Field label="Add a server" hint="Started locally when a run needs it">
+        <div className="space-y-3 rounded-2xl bg-white/[0.05] px-4 py-4 shadow-[inset_0_1px_0_rgba(255,255,255,.12)]">
+          <TextInput value={name} onChange={(e) => setName(e.target.value)} placeholder="Display name (optional)" />
+          <TextInput value={command} onChange={(e) => setCommand(e.target.value)} placeholder="Command, e.g. npx" />
+          <TextInput value={args} onChange={(e) => setArgs(e.target.value)} placeholder="Arguments, e.g. -y @modelcontextprotocol/server-filesystem ." />
+          <textarea
+            value={env}
+            onChange={(e) => setEnv(e.target.value)}
+            placeholder={"Environment variables, one per line\nAPI_KEY=value"}
+            className="scroll-thin min-h-[84px] w-full resize-y rounded-xl bg-black/25 px-3 py-2.5 font-mono text-[12px] leading-relaxed text-white/80 outline-none placeholder:text-white/30 focus:ring-1 focus:ring-white/30"
+          />
+          <div className="flex items-center justify-between gap-3">
+            <Button variant="primary" size="sm" disabled={busy === "add"} onClick={() => void add()}>
+              {busy === "add" ? <Spinner className="h-3.5 w-3.5" /> : <Server className="h-3.5 w-3.5" />} Add server
+            </Button>
+            <button
+              onClick={() => setReload((n) => n + 1)}
+              className="inline-flex items-center gap-1.5 text-[12.5px] text-white/45 hover:text-white"
+            >
+              <RefreshCw className="h-3.5 w-3.5" /> Refresh
+            </button>
+          </div>
+        </div>
+        {error && <p className="mt-2 flex items-center gap-1.5 px-1 text-[12.5px] text-amber-200"><AlertTriangle className="h-3.5 w-3.5" /> {error}</p>}
+      </Field>
+
+      <p className="px-1 text-[12.5px] leading-relaxed text-white/45">
+        MCP servers run as local processes with the permissions of your account. Their tools are treated as
+        commands, so they ask for approval in Ask first and Balanced modes.
+      </p>
+    </div>
+  );
+}
+
+export function MemoryPanel() {
+  const { state } = useStore();
+  const [entries, setEntries] = useState<MemoryEntry[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [reload, setReload] = useState(0);
+  const [query, setQuery] = useState("");
+
+  useEffect(() => {
+    let alive = true;
+    setError(null);
+    // The search runs on the server so it uses the same BM25 ranking the
+    // agent gets from the recall tool.
+    const timer = window.setTimeout(() => {
+      listMemory(query)
+        .then((list) => {
+          if (alive) setEntries(list);
+        })
+        .catch((caught) => {
+          if (!alive) return;
+          setEntries([]);
+          setError(caught instanceof Error ? caught.message : String(caught));
+        });
+    }, query.trim() ? 160 : 0);
+    return () => {
+      alive = false;
+      window.clearTimeout(timer);
+    };
+  }, [reload, query]);
+
+  const remove = async (entry: MemoryEntry) => {
+    setBusy(entry.id);
+    setError(null);
+    try {
+      await deleteMemory(entry.id);
+      setEntries((prev) => (prev ? prev.filter((item) => item.id !== entry.id) : prev));
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : String(caught));
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  return (
+    <div className="space-y-5">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h3 className="flex items-center gap-2 font-serif text-[24px] leading-tight"><Brain className="h-[18px] w-[18px] accent-text" /> Memory</h3>
+          <p className="text-[13px] text-white/55">Durable facts the agent has saved across sessions. Delete anything you no longer want it to recall.</p>
+        </div>
+        <Button variant="ghost" size="sm" onClick={() => setReload((n) => n + 1)}>
+          <RefreshCw className={cn("h-3.5 w-3.5", entries === null && "animate-spin")} /> Refresh
+        </Button>
+      </div>
+
+      {!state.tools.memory && (
+        <p className="flex items-start gap-2 rounded-2xl bg-amber-300/10 px-3.5 py-2.5 text-[12.5px] text-amber-100 shadow-[inset_0_0_0_1px_rgba(255,220,150,.18)]">
+          <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+          Memory is turned off in Agent settings. Existing entries are kept but the agent will not read or write them.
+        </p>
+      )}
+
+      {entries !== null && (
+        <div className="relative">
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-white/35" />
+          <input
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder="Search memories"
+            className="w-full rounded-xl bg-black/25 py-2.5 pl-9 pr-3 text-[13px] text-white/85 outline-none placeholder:text-white/30 focus:ring-1 focus:ring-white/30"
+          />
+        </div>
+      )}
+
+      {entries === null ? (
+        <div className="flex items-center gap-2.5 py-10 text-[13.5px] text-white/55"><Spinner className="h-4 w-4" /> Loading memories…</div>
+      ) : entries.length === 0 ? (
+        <div className="glass-css flex flex-col items-center rounded-3xl px-6 py-12 text-center">
+          <Database className="mb-3 h-8 w-8 text-white/35" />
+          <p className="font-serif text-[22px]">{query.trim() ? "No matching memories" : "Nothing remembered yet"}</p>
+          <p className="mt-1.5 max-w-sm text-[13px] leading-relaxed text-white/50">
+            {query.trim()
+              ? "Search looks at every word, including partial words and tags, so a differently phrased fact can still surface."
+              : "When the agent learns something worth keeping, it saves a short fact here. You can remove individual entries at any time."}
+          </p>
+        </div>
+      ) : (
+        <div className="space-y-2.5">
+          {entries.map((entry) => {
+            const tags = entry.tags.split(",").map((tag) => tag.trim()).filter(Boolean);
+            return (
+              <div key={entry.id} className="group rounded-2xl bg-white/[0.06] px-4 py-3 shadow-[inset_0_1px_0_rgba(255,255,255,.14)]">
+                <div className="flex items-start gap-3">
+                  <span className="mt-0.5 grid h-7 w-7 shrink-0 place-items-center rounded-xl bg-white/10"><Brain className="h-3.5 w-3.5 text-white/70" /></span>
+                  <div className="min-w-0 flex-1">
+                    <p className="whitespace-pre-wrap break-words text-[13.5px] leading-relaxed text-white/85">{entry.content}</p>
+                    <div className="mt-2 flex flex-wrap items-center gap-2 text-[10.5px] text-white/40">
+                      <span className="inline-flex items-center gap-1"><Clock className="h-3 w-3" />{new Date(entry.created_at).toLocaleString()}</span>
+                      <span className="rounded-full bg-white/10 px-2 py-0.5 uppercase tracking-[0.12em] text-white/50">{entry.scope}</span>
+                      {tags.map((tag) => (
+                        <span key={tag} className="rounded-full bg-white/[0.07] px-2 py-0.5 text-white/45">#{tag}</span>
+                      ))}
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => void remove(entry)}
+                    disabled={busy === entry.id}
+                    className="grid h-8 w-8 shrink-0 place-items-center rounded-full text-white/40 transition hover:bg-white/15 hover:text-white disabled:opacity-40"
+                    aria-label="Delete memory"
+                    title="Delete memory"
+                  >
+                    {busy === entry.id ? <Spinner className="h-3.5 w-3.5" /> : <Trash2 className="h-3.5 w-3.5" />}
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {error && <p className="flex items-center gap-1.5 px-1 text-[12.5px] text-amber-200"><AlertTriangle className="h-3.5 w-3.5" /> {error}</p>}
+    </div>
+  );
+}
+
+const SHORTCUTS = [
+  { keys: "Ctrl K", label: "Command palette" },
+  { keys: "Ctrl B", label: "Show or hide sidebar" },
+  { keys: "Ctrl J", label: "Show or hide inspector" },
+  { keys: "Esc", label: "Close settings, palette or menus" },
+] as const;
+
+export function AboutPanel() {
+  const { boot } = useServer();
+  const { state } = useStore();
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <h3 className="flex items-center gap-2 font-serif text-[26px] leading-tight"><Info className="h-[18px] w-[18px] accent-text" /> About Hikes</h3>
+        <p className="mt-1 text-[13.5px] leading-relaxed text-white/55">
+          A local-first agent harness: one glass shell, real tools, and any model you can reach.
+        </p>
+      </div>
+
+      {boot ? (
+        <div className="grid gap-2 sm:grid-cols-2">
+          <InfoRow icon={Info} label="Version" value={`Hikes v${boot.version}`} mono={false} />
+          <InfoRow icon={Server} label="Node" value={boot.node} />
+          <InfoRow icon={HardDrive} label="Data directory" value={boot.dataDir} />
+          <InfoRow icon={FolderOpen} label="Workspace" value={boot.workspace} />
+          <InfoRow icon={ShieldCheck} label="Authentication" value={boot.tokenRequired ? "Launch token required" : "Local access only"} mono={false} />
+          <InfoRow icon={Database} label="Memory" value={`${boot.memoryCount} ${boot.memoryCount === 1 ? "entry" : "entries"}`} mono={false} />
+          <InfoRow icon={Database} label="Model catalog" value={`${boot.models.length} available`} mono={false} />
+          <InfoRow icon={KeyRound} label="Providers" value={`${Object.values(boot.providers).filter((p) => p.enabled).length} enabled`} mono={false} />
+        </div>
+      ) : (
+        <div className="flex items-center gap-2.5 py-6 text-[13.5px] text-white/55"><Spinner className="h-4 w-4" /> Loading harness details…</div>
+      )}
+
+      <Field label="Keyboard shortcuts">
+        <div className="divide-y divide-white/[0.07] overflow-hidden rounded-2xl bg-white/[0.05] shadow-[inset_0_1px_0_rgba(255,255,255,.12)]">
+          {SHORTCUTS.map((shortcut) => (
+            <div key={shortcut.keys} className="flex items-center justify-between gap-3 px-4 py-2.5 text-[13px]">
+              <span className="flex items-center gap-2 text-white/70"><Keyboard className="h-3.5 w-3.5 text-white/40" />{shortcut.label}</span>
+              <span className="shrink-0 rounded-md bg-white/10 px-1.5 py-0.5 font-mono text-[10.5px] text-white/55">{shortcut.keys}</span>
+            </div>
+          ))}
+        </div>
+      </Field>
+
+      <div className="flex items-start gap-2.5 rounded-2xl bg-white/[0.05] px-3.5 py-3 text-[12.5px] leading-relaxed text-white/55 shadow-[inset_0_1px_0_rgba(255,255,255,.12)]">
+        <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-emerald-200/80" />
+        <span>
+          Setup runs once. This build deliberately has no “restart onboarding” action, so your profile, providers and appearance stay put. Your configuration is stored locally at{" "}
+          <span className="font-mono text-white/70">~/.hikes/config.json</span> and in this browser.
+          {state.onboarded ? " Setup is complete on this device." : ""}
+        </span>
       </div>
     </div>
   );

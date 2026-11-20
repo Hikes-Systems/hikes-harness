@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { memo, useMemo, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   AlertTriangle,
@@ -11,6 +11,7 @@ import {
   ExternalLink,
   FileText,
   Globe,
+  Minimize2,
   Paperclip,
   PenLine,
   RefreshCw,
@@ -19,10 +20,21 @@ import {
   ShieldCheck,
   Telescope,
   Terminal,
+  Undo2,
 } from "lucide-react";
 import { Burst, Spinner } from "./ui";
 import { Markdown } from "./Markdown";
-import type { ApprovalRequest, Msg, Source, Step, StepKind, SubAgentTask, ToolRisk, ToolStatus } from "../lib/types";
+import type {
+  ApprovalRequest,
+  FileChange,
+  Msg,
+  Source,
+  Step,
+  StepKind,
+  SubAgentTask,
+  ToolRisk,
+  ToolStatus,
+} from "../lib/types";
 import { cn } from "../utils/cn";
 import { spring } from "../lib/motion";
 
@@ -35,6 +47,7 @@ export const STEP_ICON: Record<StepKind, typeof Search> = {
   write: PenLine,
   research: Telescope,
   agent: Cpu,
+  compact: Minimize2,
 };
 
 const RISK: Record<ToolRisk, { label: string; cls: string }> = {
@@ -74,14 +87,57 @@ function formatMs(ms: number): string {
   return ms >= 1000 ? `${(ms / 1000).toFixed(1)}s` : `${Math.round(ms)}ms`;
 }
 
-function StepRow({ s }: { s: Step }) {
+function DiffView({ change }: { change: FileChange }) {
+  const lines = change.diff.split("\n");
+  return (
+    <div className="overflow-hidden rounded-xl bg-black/30 shadow-[inset_0_0_0_1px_rgba(255,255,255,.08)]">
+      <div className="flex items-center justify-between gap-2 border-b border-white/10 px-3 py-1.5">
+        <span className="truncate font-mono text-[11px] text-white/60">{change.path}</span>
+        <span className="shrink-0 font-mono text-[10.5px] text-white/40">
+          <span className="text-emerald-200">+{change.additions}</span>{" "}
+          <span className="text-amber-200">-{change.deletions}</span>
+        </span>
+      </div>
+      <pre className="scroll-thin max-h-[240px] overflow-auto px-3 py-2 font-mono text-[11.5px] leading-relaxed">
+        {lines.map((line, index) => (
+          <span
+            key={index}
+            className={cn(
+              "block whitespace-pre-wrap break-words",
+              line.startsWith("@@")
+                ? "text-white/40"
+                : line.startsWith("+")
+                  ? "text-emerald-200"
+                  : line.startsWith("-")
+                    ? "text-amber-200"
+                    : "text-white/55",
+            )}
+          >
+            {line || " "}
+          </span>
+        ))}
+      </pre>
+    </div>
+  );
+}
+
+function StepRow({
+  s,
+  onRevert,
+  revertBusy,
+}: {
+  s: Step;
+  onRevert?: (stepId: string) => void;
+  revertBusy?: boolean;
+}) {
   const [open, setOpen] = useState(false);
   const Icon = STEP_ICON[s.kind];
   const tool = s.tool;
   const denied = tool?.status === "denied";
   const failed = tool?.status === "error" || tool?.ok === false;
   const pending = tool?.status === "pending";
-  const expandable = Boolean(tool?.output || s.sources?.length);
+  const changes = tool?.changes ?? [];
+  const expandable = Boolean(tool?.output || s.sources?.length || changes.length);
 
   return (
     <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={spring.snappy}>
@@ -122,6 +178,37 @@ function StepRow({ s }: { s: Step }) {
         )}
       </button>
 
+      {changes.length ? (
+        <div className="ml-10 mt-2 flex flex-wrap items-center gap-2">
+          {changes.map((change) => (
+            <span
+              key={change.snapshotId ?? change.path}
+              className="inline-flex max-w-[280px] items-center gap-1.5 rounded-full bg-black/25 px-2.5 py-1 font-mono text-[11px] text-white/60 shadow-[inset_0_0_0_1px_rgba(255,255,255,.08)]"
+            >
+              <FileText className="h-3 w-3 shrink-0" />
+              <span className="truncate">{change.path}</span>
+              <span className="shrink-0 text-emerald-200">+{change.additions}</span>
+              <span className="shrink-0 text-amber-200">-{change.deletions}</span>
+            </span>
+          ))}
+          {changes.every((change) => change.reverted) ? (
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-300/10 px-3 py-1.5 text-[12px] text-emerald-100">
+              <Check className="h-3.5 w-3.5" /> Reverted to this step
+            </span>
+          ) : (
+            <button
+              type="button"
+              disabled={revertBusy || !onRevert}
+              onClick={() => onRevert?.(s.id)}
+              className="glass-css glass-hover inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] text-white/75 outline-none disabled:opacity-50"
+            >
+              {revertBusy ? <Spinner className="h-3.5 w-3.5" /> : <Undo2 className="h-3.5 w-3.5" />}
+              Revert to this step
+            </button>
+          )}
+        </div>
+      ) : null}
+
       <AnimatePresence initial={false}>
         {open && (
           <motion.div
@@ -137,6 +224,9 @@ function StepRow({ s }: { s: Step }) {
                   {tool.name}({Object.keys(tool.args ?? {}).length ? JSON.stringify(tool.args) : ""})
                 </div>
               )}
+              {changes.map((change) => (
+                <DiffView key={change.snapshotId ?? change.path} change={change} />
+              ))}
               {tool?.output && (
                 <pre className="scroll-thin max-h-[260px] overflow-auto whitespace-pre-wrap break-words rounded-xl bg-black/30 px-3 py-2.5 font-mono text-[11.5px] leading-relaxed text-white/75 shadow-[inset_0_0_0_1px_rgba(255,255,255,.08)]">
                   {tool.output}
@@ -178,7 +268,15 @@ function StepRow({ s }: { s: Step }) {
   );
 }
 
-function Trace({ msg }: { msg: Msg }) {
+function Trace({
+  msg,
+  onRevert,
+  revertBusy,
+}: {
+  msg: Msg;
+  onRevert?: (stepId: string) => void;
+  revertBusy?: boolean;
+}) {
   const [open, setOpen] = useState<boolean | null>(null);
   const steps = msg.steps ?? [];
   if (!steps.length) return null;
@@ -214,7 +312,7 @@ function Trace({ msg }: { msg: Msg }) {
               <div className="absolute bottom-3 left-[18px] top-3 w-px bg-white/15" />
               {steps.map((s) => (
                 <div key={s.id} className="relative">
-                  <StepRow s={s} />
+                  <StepRow s={s} onRevert={onRevert} revertBusy={revertBusy} />
                 </div>
               ))}
             </div>
@@ -232,7 +330,6 @@ function SubAgentCard({ task }: { task: SubAgentTask }) {
   const failed = task.status === "error";
   return (
     <motion.div
-      layout
       initial={{ opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
       transition={spring.smooth}
@@ -307,7 +404,7 @@ function SubAgentCard({ task }: { task: SubAgentTask }) {
 function DelegatedWork({ tasks }: { tasks: SubAgentTask[] }) {
   if (!tasks.length) return null;
   return (
-    <motion.div layout initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="mb-4 space-y-2">
+    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="mb-4 space-y-2">
       <div className="flex items-center gap-2 px-1 text-[10.5px] font-medium uppercase tracking-[0.16em] text-white/40">
         <Bot className="h-3.5 w-3.5" /> Delegated work
       </div>
@@ -431,21 +528,42 @@ function tokenLabel(msg: Msg): string {
   const total = usage.totalTokens ?? (usage.inputTokens ?? 0) + (usage.outputTokens ?? 0);
   if (!total) return "";
   const compact = total >= 1000 ? `${(total / 1000).toFixed(1)}k` : String(total);
-  return `${usage.estimated ? "~" : ""}${compact} tokens`;
+  const mark = usage.estimated ? "~" : "";
+  // A cached prompt was paid for once. Say how much of it was free.
+  const cached = usage.cachedTokens ?? 0;
+  if (cached > 0) {
+    const fresh = Math.max(0, total - cached);
+    const freshLabel = fresh >= 1000 ? `${(fresh / 1000).toFixed(1)}k` : String(fresh);
+    const cachedLabel = cached >= 1000 ? `${(cached / 1000).toFixed(1)}k` : String(cached);
+    return `${mark}${freshLabel} new · ${cachedLabel} cached`;
+  }
+  return `${mark}${compact} tokens`;
 }
 
-export function MessageView({
+function costLabel(msg: Msg): string {
+  const cost = msg.usage?.costUsd;
+  if (cost === undefined) return "";
+  if (cost === 0) return "$0.00";
+  if (cost < 0.01) return `$${cost.toFixed(4)}`;
+  return `$${cost.toFixed(2)}`;
+}
+
+export const MessageView = memo(function MessageView({
   msg,
   onRegenerate,
   canRegenerate,
   onApprove,
   approvalBusy,
+  onRevertStep,
+  revertBusy,
 }: {
   msg: Msg;
   onRegenerate?: () => void;
   canRegenerate?: boolean;
   onApprove?: (callId: string, approve: boolean) => void;
   approvalBusy?: boolean;
+  onRevertStep?: (stepId: string) => void;
+  revertBusy?: boolean;
 }) {
   const [copied, setCopied] = useState(false);
   if (msg.role === "user") {
@@ -466,6 +584,7 @@ export function MessageView({
   }
   const running = msg.status === "running";
   const tokens = tokenLabel(msg);
+  const cost = costLabel(msg);
   return (
     <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={spring.smooth} className="flex gap-4">
       <div className="mt-1 hidden h-8 w-8 shrink-0 place-items-center sm:grid"><Burst className="h-7 w-7" spin={running} /></div>
@@ -475,7 +594,7 @@ export function MessageView({
             <Telescope className="h-3.5 w-3.5 accent-text" /> Deep research
           </div>
         )}
-        <Trace msg={msg} />
+        <Trace msg={msg} onRevert={onRevertStep} revertBusy={revertBusy} />
         <DelegatedWork tasks={msg.subagents ?? []} />
         {msg.approval && onApprove && (
           <ApprovalCard request={msg.approval} busy={approvalBusy} onDecide={(approve) => onApprove(msg.approval!.callId, approve)} />
@@ -506,10 +625,10 @@ export function MessageView({
             {canRegenerate && (
               <button onClick={onRegenerate} className="inline-flex h-8 items-center gap-1.5 rounded-full px-2.5 text-[12.5px] transition hover:bg-white/12 hover:text-white"><RefreshCw className="h-3.5 w-3.5" />Retry</button>
             )}
-            <span className="ml-2 text-[12px] text-white/35">{msg.model}{tokens ? ` · ${tokens}` : ""}{msg.ms ? ` · ${(msg.ms / 1000).toFixed(1)}s` : ""}</span>
+            <span className="ml-2 text-[12px] text-white/35">{msg.model}{tokens ? ` · ${tokens}` : ""}{cost ? ` · ${cost}` : ""}{msg.ms ? ` · ${(msg.ms / 1000).toFixed(1)}s` : ""}</span>
           </div>
         )}
       </div>
     </motion.div>
   );
-}
+});

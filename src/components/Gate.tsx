@@ -30,7 +30,7 @@ export function ServerGate({ unauthorized }: { unauthorized: boolean }) {
             {unauthorized ? <KeyRound className="h-5 w-5 accent-text" /> : <Plug className="h-5 w-5 accent-text" />}
           </span>
           <div>
-            <p className="text-[11px] font-medium uppercase tracking-[0.24em] text-white/50">Hikes harness</p>
+            <p className="text-[11px] font-medium uppercase tracking-[0.24em] text-white/50">agent harness</p>
             <h2 className="font-serif text-[30px] leading-tight">{unauthorized ? "Launch token required" : "Backend not reachable"}</h2>
           </div>
         </div>
@@ -40,7 +40,7 @@ export function ServerGate({ unauthorized }: { unauthorized: boolean }) {
         {unauthorized ? (
           <div className="mt-5 space-y-3 text-[13.5px] leading-relaxed text-white/65">
             <p>Every launch prints a fresh token. Open the exact link from the terminal, or pass the token in the URL:</p>
-            <pre className="glass-inset overflow-x-auto rounded-2xl px-4 py-3 font-mono text-[12px] text-white/85">http://127.0.0.1:5173/#hikes_token=YOUR_TOKEN</pre>
+            <pre className="glass-inset overflow-x-auto rounded-2xl px-4 py-3 font-mono text-[12px] text-white/85">http://127.0.0.1:5173/?hikes_token=YOUR_TOKEN</pre>
             <p className="flex items-start gap-2">
               <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-emerald-200" />
               The token stays in this browser's local storage. Restarting <span className="font-mono text-white/85">hikes</span> creates a new one.

@@ -1,9 +1,9 @@
 @import "tailwindcss";
 
 @theme {
-  --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
-  --font-serif: "Instrument Serif", "Iowan Old Style", Georgia, serif;
-  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  --font-sans: "Geist", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-serif: "Geist", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
 }
 
 /* Registered colour properties => scene changes crossfade smoothly */
@@ -33,6 +33,9 @@
     --stars 1.4s ease, --aurora 1.4s ease;
 }
 
+/* Dark native controls — without this Chromium paints a light scrollbar in
+   any overflow container that is not using .scroll-thin. */
+html { color-scheme: dark; }
 html, body, #root { height: 100%; margin: 0; background: #0b0b33; }
 body {
   font-family: var(--font-sans);
@@ -49,7 +52,10 @@ body {
 
 .scroll-thin { scrollbar-width: thin; scrollbar-color: rgba(255,255,255,.22) transparent; }
 .scroll-thin::-webkit-scrollbar { width: 8px; height: 8px; }
+.scroll-thin::-webkit-scrollbar-track { background: transparent; }
 .scroll-thin::-webkit-scrollbar-thumb { background: rgba(255,255,255,.2); border-radius: 99px; border: 2px solid transparent; background-clip: content-box; }
+.scroll-thin::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,.34); background-clip: content-box; }
+.scroll-thin::-webkit-scrollbar-corner { background: transparent; }
 
 /* ───────────── accent helpers ───────────── */
 .accent-text { color: var(--accent); }
@@ -57,14 +63,15 @@ body {
 .accent-ring { box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--accent) 70%, transparent), 0 0 24px -4px color-mix(in oklab, var(--accent) 45%, transparent); }
 
 /* ───────────── CSS liquid glass (cheap, for secondary surfaces) ───────────── */
+/* No backdrop-filter here: it is applied ~65 times, and every one of those
+   surfaces re-blurs the animated wallpaper while scrolling or streaming.
+   The layered tint below gives the same read at a fraction of the cost. */
 .glass-css {
   position: relative;
   background:
-    radial-gradient(120% 90% at 8% 0%, rgba(255,255,255,.16), transparent 55%),
-    linear-gradient(150deg, rgba(255,255,255,.2) 0%, rgba(255,255,255,.05) 38%, rgba(255,255,255,.02) 62%, rgba(255,255,255,.12) 100%),
-    rgba(14, 10, 48, .2);
-  backdrop-filter: blur(12px) saturate(1.9) brightness(1.06);
-  -webkit-backdrop-filter: blur(12px) saturate(1.9) brightness(1.06);
+    radial-gradient(120% 90% at 8% 0%, rgba(255,255,255,.17), transparent 55%),
+    linear-gradient(150deg, rgba(255,255,255,.21) 0%, rgba(255,255,255,.06) 38%, rgba(255,255,255,.025) 62%, rgba(255,255,255,.13) 100%),
+    rgba(17, 12, 54, .34);
   box-shadow:
     inset 0 1px 0 rgba(255,255,255,.55),
     inset 0 -1px 0 rgba(255,255,255,.1),
@@ -116,10 +123,23 @@ body {
 }
 .stars-a { width: 2px; height: 2px; border-radius: 50%; background: transparent; opacity: calc(var(--stars)); animation: twinkle 5s ease-in-out infinite; }
 .stars-b { width: 1.5px; height: 1.5px; border-radius: 50%; background: transparent; opacity: calc(var(--stars)); animation: twinkle 7s ease-in-out -2s infinite; }
-.aurora-band { opacity: var(--aurora); filter: blur(46px); will-change: transform; }
+.aurora-band { opacity: var(--aurora); filter: blur(34px); will-change: transform; }
 
 [data-motion="off"] .scroll-layer,
 [data-motion="off"] .scene-anim { animation-play-state: paused !important; }
+/* A tab in the background should cost nothing. The scene freezes where it is
+   and eases back up when the user comes back. */
+[data-tab="hidden"] .scroll-layer,
+[data-tab="hidden"] .scene-anim { animation-play-state: paused !important; }
+/* The rim copy runs the same animations as the live scene, phase-locked from
+   the JavaScript side. Letting the compositor drive them costs far less than
+   copying computed styles across at a low frame rate, which forced a style
+   recalc and a re-raster of the mountain layers every time it ran. */
+/* The rim copy is only a thin ring at the panel edge. Its 34px aurora blur and
+   its soft-light grain both cost a full-screen raster on every frame, and
+   neither is visible inside a 46px band, so the ring drops both. */
+[data-scene="rim"] .aurora-band { filter: none; }
+[data-scene="rim"] .grain { display: none; }
 @media (prefers-reduced-motion: reduce) {
   .scroll-layer, .scene-anim { animation-play-state: paused !important; }
 }
@@ -160,47 +180,59 @@ body {
 .caret::after { content: ""; display: inline-block; width: 7px; height: 1.05em; margin-left: 3px; vertical-align: -0.15em; border-radius: 2px; background: var(--accent); animation: caret 1s steps(1) infinite; }
 
 /* markdown */
-.md p { margin: 0 0 .85em; line-height: 1.7; }
+.md { line-height: 1.72; }
+.md p { margin: 0 0 .9em; line-height: 1.72; }
 .md p:last-child { margin-bottom: 0; }
-.md ul, .md ol { margin: 0 0 .9em; padding-left: 1.25em; line-height: 1.7; }
+.md ul, .md ol { margin: 0 0 .95em; padding-left: 1.35em; line-height: 1.68; }
+.md ul ul, .md ul ol, .md ol ul, .md ol ol { margin: .35em 0 .2em; }
 .md ul { list-style: none; }
 .md ul li { position: relative; }
-.md ul li::before { content: ""; position: absolute; left: -1em; top: .72em; width: 5px; height: 5px; border-radius: 50%; background: var(--accent); }
+.md ul > li::before { content: ""; position: absolute; left: -1em; top: .74em; width: 5px; height: 5px; border-radius: 50%; background: var(--accent); }
+.md ul ul > li::before { background: rgba(255,255,255,.45); width: 4px; height: 4px; }
 .md ol { list-style: decimal; }
 .md ol li::marker { color: var(--accent); font-weight: 500; }
-.md h3, .md h4, .md h2 { font-family: var(--font-serif); font-weight: 400; font-size: 1.45em; margin: 1.1em 0 .4em; line-height: 1.2; }
-.md code.inline { font-family: var(--font-mono); font-size: .84em; padding: .12em .45em; border-radius: 7px; background: rgba(255,255,255,.12); box-shadow: inset 0 0 0 1px rgba(255,255,255,.1); }
-.md blockquote { margin: 0 0 .9em; padding: .1em 0 .1em 1em; border-left: 2px solid var(--accent); color: rgba(255,255,255,.72); font-style: italic; }
+.md li > span { display: inline; }
+.md li > ul, .md li > ol { margin-top: .35em; }
+
+/* heading hierarchy — h1 through h4 are visually distinct */
+.md .md-h { font-family: var(--font-sans); font-weight: 600; color: #fff; letter-spacing: -0.018em; }
+.md .md-h1 { font-size: 1.72em; line-height: 1.2; margin: .55em 0 .45em; letter-spacing: -0.028em; }
+.md .md-h2 { font-size: 1.42em; line-height: 1.25; margin: 1.25em 0 .45em; }
+.md .md-h3 { font-size: 1.19em; line-height: 1.3; margin: 1.15em 0 .4em; }
+.md .md-h4 { font-size: 1.04em; line-height: 1.35; margin: 1em 0 .35em; }
+.md .md-h5, .md .md-h6 { font-size: .95em; line-height: 1.4; margin: .9em 0 .3em; text-transform: uppercase; letter-spacing: .08em; color: rgba(255,255,255,.72); }
+.md > .md-h1:first-child, .md > .md-h2:first-child { margin-top: 0; }
+
+.md code.inline { font-family: var(--font-mono); font-size: .86em; padding: .12em .45em; border-radius: 7px; background: rgba(255,255,255,.12); box-shadow: inset 0 0 0 1px rgba(255,255,255,.1); }
+.md blockquote { margin: 0 0 .95em; padding: .1em 0 .1em 1em; border-left: 2px solid var(--accent); color: rgba(255,255,255,.72); font-style: italic; }
 .md a { color: var(--accent); text-decoration: underline; text-underline-offset: 3px; }
 .md strong { font-weight: 600; color: #fff; }
+.md del { color: rgba(255,255,255,.5); }
+.md-hr { margin: 1.5em 0; border: 0; border-top: 1px solid rgba(255,255,255,.12); }
 
-.font-serif { text-shadow: 0 2px 22px rgba(14, 6, 50, .38); }
+/* tables */
+.md-table-wrap { margin: 0 0 1.1em; overflow-x: auto; border-radius: 14px; box-shadow: inset 0 0 0 1px rgba(255,255,255,.1); background: rgba(8,5,30,.28); }
+.md-table { width: 100%; border-collapse: collapse; font-size: .94em; line-height: 1.55; }
+.md-table th, .md-table td { padding: .62em .85em; text-align: left; vertical-align: top; border-bottom: 1px solid rgba(255,255,255,.08); }
+.md-table thead th { font-weight: 600; color: #fff; font-size: .95em; letter-spacing: .01em; background: rgba(255,255,255,.06); white-space: nowrap; }
+.md-table tbody tr:last-child td { border-bottom: 0; }
+.md-table tbody tr:nth-child(even) { background: rgba(255,255,255,.022); }
+.md-table td strong { font-weight: 600; color: #fff; }
+
+.font-serif { font-family: var(--font-sans); font-weight: 600; letter-spacing: -0.025em; text-shadow: 0 2px 22px rgba(14, 6, 50, .38); }
 
 .fade-top { -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 78px); mask-image: linear-gradient(to bottom, transparent 0, #000 78px); }
 
 /* ───────────── single full-window liquid-glass shell ───────────── */
 .glass-shell {
-  /* No background of its own: the lens must see the wallpaper, not a tint. */
+  /* Fully transparent: the live wallpaper shows through untouched. The rim
+     copy in GlassLens supplies the refraction without a per-frame filter. */
   background: transparent;
   box-shadow: 0 42px 90px -34px rgba(0,0,0,.8);
   isolation: isolate;
 }
-/* The refraction layer. It captures the wallpaper, softly blurs it, then the
-   SVG filter (see GlassShell) bends it around the rim with chromatic fringing. */
-.glass-shell-lens {
-  position: absolute;
-  inset: 0;
-  z-index: 0;
-  border-radius: inherit;
-  backdrop-filter: blur(7px) saturate(1.85) brightness(1.06);
-  -webkit-backdrop-filter: blur(7px) saturate(1.85) brightness(1.06);
-}
-[data-quality="lite"] .glass-shell-lens {
-  filter: none !important;
-  backdrop-filter: blur(26px) saturate(1.6) brightness(1.03);
-  -webkit-backdrop-filter: blur(26px) saturate(1.6) brightness(1.03);
-}
-/* Surface tint sits above the lens so text stays readable without frosting it. */
+/* Surface tint sits above the refraction layer (GlassLens) so text stays
+   readable without frosting the wallpaper. */
 .glass-shell-tint {
   position: absolute;
   inset: 0;
@@ -241,11 +273,9 @@ body {
   inset: -20%;
   pointer-events: none;
   background:
-    radial-gradient(ellipse 42% 34% at 22% 12%, color-mix(in oklab, var(--au1) 18%, transparent), transparent 70%),
-    radial-gradient(ellipse 40% 32% at 82% 84%, color-mix(in oklab, var(--accent) 16%, transparent), transparent 72%);
-  filter: blur(30px);
-  opacity: .65;
-  animation: shell-drift 26s ease-in-out infinite alternate;
+    radial-gradient(ellipse 42% 34% at 22% 12%, color-mix(in oklab, var(--au1) 14%, transparent), transparent 70%),
+    radial-gradient(ellipse 40% 32% at 82% 84%, color-mix(in oklab, var(--accent) 12%, transparent), transparent 72%);
+  opacity: .5;
   z-index: 2;
 }
 .glass-shell-sheen {
@@ -253,11 +283,9 @@ body {
   inset: 0;
   pointer-events: none;
   border-radius: inherit;
-  background: linear-gradient(112deg, transparent 32%, rgba(255,255,255,.075) 44%, rgba(255,255,255,.02) 50%, transparent 62%);
-  background-size: 240% 240%;
-  animation: shell-sheen 18s ease-in-out infinite;
+  background: linear-gradient(112deg, transparent 32%, rgba(255,255,255,.06) 44%, rgba(255,255,255,.015) 50%, transparent 62%);
   mix-blend-mode: screen;
-  opacity: .5;
+  opacity: .45;
   z-index: 4;
 }
 .glass-noise {

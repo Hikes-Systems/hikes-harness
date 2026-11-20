@@ -1,24 +1,27 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import {
+  Brain,
+  Cpu,
   Download,
   CornerDownLeft,
   Image,
+  Info,
   MessageSquare,
   PanelLeft,
   PanelRight,
   Plus,
   Search,
+  SlidersHorizontal,
   Telescope,
-  User,
   Wrench,
-  Cpu,
 } from "lucide-react";
 import type { SessionSummary } from "../lib/types";
 import { cn } from "../utils/cn";
 import { pop } from "../lib/motion";
+import type { SettingsTab } from "./Settings";
 
-export type SettingsTab = "profile" | "models" | "agent" | "look";
+export type { SettingsTab };
 
 interface Action {
   id: string;
@@ -72,10 +75,12 @@ export function CommandPalette({
       { id: "export", label: "Export current session", hint: "Download as Markdown", icon: Download, run: onExport },
       { id: "sidebar", label: "Toggle sidebar", hint: "Show or hide sessions", icon: PanelLeft, run: onToggleSidebar },
       { id: "inspector", label: "Toggle run inspector", hint: "Timeline, tokens, sub-agents", icon: PanelRight, run: onToggleInspector },
-      { id: "profile", label: "Settings: Profile", hint: "Name, role and response style", icon: User, run: () => onSettings("profile") },
+      { id: "general", label: "Settings: General", hint: "Name, role, style and research mode", icon: SlidersHorizontal, run: () => onSettings("general") },
       { id: "models", label: "Settings: Providers", hint: "API keys and model catalog", icon: Cpu, run: () => onSettings("models") },
       { id: "agent", label: "Settings: Agent", hint: "Tools, autonomy and workspace", icon: Wrench, run: () => onSettings("agent") },
-      { id: "look", label: "Settings: Appearance", hint: "Wallpaper and glass quality", icon: Image, run: () => onSettings("look") },
+      { id: "look", label: "Settings: Appearance", hint: "Wallpaper, glass quality and motion", icon: Image, run: () => onSettings("look") },
+      { id: "memory", label: "Settings: Memory", hint: "Review and delete saved facts", icon: Brain, run: () => onSettings("memory") },
+      { id: "about", label: "Settings: About", hint: "Version, paths, auth and shortcuts", icon: Info, run: () => onSettings("about") },
     ],
     [onNew, onToggleResearch, onExport, onToggleSidebar, onToggleInspector, onSettings],
   );

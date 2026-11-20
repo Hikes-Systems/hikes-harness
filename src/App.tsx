@@ -10,7 +10,7 @@ import { ServerProvider, useServer } from "./lib/server";
 import { sceneVars } from "./lib/scenes";
 
 function Shell() {
-  const { state, set, setTools } = useStore();
+  const { state, set, setTools, restore } = useStore();
   const { boot, loading, error, unauthorized } = useServer();
   const hydrated = useRef(false);
 
@@ -21,6 +21,14 @@ function Shell() {
     setTools(boot.tools);
     set({ autonomy: boot.autonomy, defaultModel: boot.defaultModel ?? "" });
   }, [boot, set, setTools]);
+
+  // The server owns the onboarding flag and mirrors the interface state, so
+  // neither is lost when the browser lands on a different origin.
+  useEffect(() => {
+    if (!boot) return;
+    if (boot.onboarded) set({ onboarded: true });
+    restore(boot.ui ?? undefined);
+  }, [boot, set, restore]);
 
   let content;
   if (loading && !boot) content = <Splash />;

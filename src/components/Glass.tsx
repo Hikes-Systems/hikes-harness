@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import LiquidGlass from "liquid-glass-react";
 import { useStore } from "../store";
+import { QUALITY } from "../lib/quality";
 import { cn } from "../utils/cn";
 
 /* Constant objects => liquid-glass-react skips its per-instance mousemove listeners (no re-renders, smoother) */
@@ -41,7 +42,8 @@ export function Glass({
   const { state } = useStore();
   const ref = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState<{ w: number; h: number } | null>(null);
-  const liquid = state.quality === "full" && !css;
+  // The liquid path is parked behind a flag — see src/lib/quality.ts.
+  const liquid = QUALITY.liquidAvailable && state.quality === "full" && !css;
 
   useLayoutEffect(() => {
     if (!liquid) return;

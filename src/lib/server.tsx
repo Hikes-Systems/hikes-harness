@@ -74,7 +74,7 @@ export function ServerProvider({ children }: { children: ReactNode }) {
           : caught instanceof ApiError
             ? caught.message
             : caught instanceof TypeError
-              ? "Can't reach the local harness. Start it with `hikes`, then reload this page."
+              ? "Can't reach the local harness. Start it with `npm start`, then reload this page."
               : caught instanceof Error
                 ? caught.message
                 : String(caught),

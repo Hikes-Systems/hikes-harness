@@ -23,7 +23,12 @@ interface OpenAiChunk {
     };
     finish_reason?: string | null;
   }>;
-  usage?: { prompt_tokens?: number; completion_tokens?: number };
+  usage?: {
+    prompt_tokens?: number;
+    completion_tokens?: number;
+    prompt_tokens_details?: { cached_tokens?: number };
+    prompt_tokens_cache_hit_tokens?: number;
+  };
 }
 
 function toOpenAiMessage(message: AgentMessage): Record<string, unknown> {
@@ -81,22 +86,31 @@ export async function* streamOpenAi(req: LLMRequest): AsyncGenerator<ModelEvent>
     body.tool_choice = "auto";
   }
 
-  // OpenAI-compatible providers that support streaming usage.
-  if (["openai", "deepseek", "openrouter"].includes(req.model.provider)) {
-    body.stream_options = { include_usage: true };
-  }
+  // Ask for the usage counters. Most OpenAI-compatible servers support this,
+  // and without it the app can only guess how much a request cost.
+  body.stream_options = { include_usage: true };
 
-  const res = await fetch(`${root}/chat/completions`, {
-    method: "POST",
-    headers,
-    body: JSON.stringify(body),
-    signal: req.signal,
-  });
+  const post = async (): Promise<Response> =>
+    fetch(`${root}/chat/completions`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify(body),
+      signal: req.signal,
+    });
+
+  let res = await post();
+  if (!res.ok && res.status === 400 && body.stream_options) {
+    // A few older servers reject the unknown field outright. Retry once
+    // without it rather than failing the whole run.
+    delete body.stream_options;
+    res = await post();
+  }
   if (!res.ok) await failure(res);
 
   const calls = new Map<number, { id: string; name: string; args: string }>();
   let inputTokens: number | undefined;
   let outputTokens: number | undefined;
+  let cachedTokens: number | undefined;
 
   for await (const data of sseEvents(res)) {
     let chunk: OpenAiChunk;
@@ -124,6 +138,12 @@ export async function* streamOpenAi(req: LLMRequest): AsyncGenerator<ModelEvent>
     if (chunk.usage) {
       inputTokens = chunk.usage.prompt_tokens ?? inputTokens;
       outputTokens = chunk.usage.completion_tokens ?? outputTokens;
+      // OpenAI reports the cached part of the prompt here; DeepSeek uses its
+      // own field name for the same number.
+      const cached =
+        chunk.usage.prompt_tokens_details?.cached_tokens ??
+        chunk.usage.prompt_tokens_cache_hit_tokens;
+      if (cached !== undefined) cachedTokens = cached;
     }
   }
 
@@ -135,7 +155,7 @@ export async function* streamOpenAi(req: LLMRequest): AsyncGenerator<ModelEvent>
     };
   }
   if (inputTokens !== undefined || outputTokens !== undefined) {
-    yield { type: "usage", inputTokens, outputTokens };
+    yield { type: "usage", inputTokens, outputTokens, cachedTokens };
   }
   yield { type: "done" };
 }

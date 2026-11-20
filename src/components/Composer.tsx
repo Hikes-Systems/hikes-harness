@@ -1,7 +1,9 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type RefObject } from "react";
+import { createPortal } from "react-dom";
 import { AnimatePresence, motion } from "framer-motion";
 import { ArrowUp, Check, ChevronDown, ChevronRight, FileText, Globe, Brain, Paperclip, Plus, SlidersHorizontal, Square, Telescope, Terminal, X } from "lucide-react";
 import { Glass } from "./Glass";
+import { ProviderLogo } from "./ProviderLogo";
 import { Toggle } from "./ui";
 import { useStore } from "../store";
 import { useServer } from "../lib/server";
@@ -29,8 +31,27 @@ interface Props {
 
 const TEXTY = /\.(txt|md|json|csv|ts|tsx|js|jsx|py|css|html|yml|yaml|toml|rs|go|java|c|cpp|sh|sql|log)$/i;
 
-function ModelMenu({ models, modelKey, onModel, onClose, placement, onOpenSettings }: {
-  models: ModelInfo[]; modelKey: string; onModel: (k: string) => void; onClose: () => void; placement: "down" | "up"; onOpenSettings: () => void;
+/** Four lines at 16.5px / 1.55 — the tallest the composer grows before scrolling. */
+const MAX_INPUT_HEIGHT = 104;
+
+/**
+ * Where a floating panel is pinned, in viewport pixels.
+ *
+ * The composer sits inside the chat column, whose stacking context is below
+ * the sidebar and the inspector. An absolutely positioned menu is therefore
+ * painted underneath them, and any ancestor with a transform or a filter can
+ * clip it. Both menus render into `document.body` instead, positioned from
+ * this rect, so they always sit above the whole app.
+ */
+interface Anchor {
+  left: number;
+  right: number;
+  top: number;
+  bottom: number;
+}
+
+function ModelMenu({ models, modelKey, onModel, onClose, placement, onOpenSettings, anchor, panelRef, maxHeight }: {
+  models: ModelInfo[]; modelKey: string; onModel: (k: string) => void; onClose: () => void; placement: "down" | "up"; onOpenSettings: () => void; anchor: Anchor; panelRef: RefObject<HTMLDivElement | null>; maxHeight: number;
 }) {
   const [more, setMore] = useState(false);
   const featured = models.slice(0, 3);
@@ -54,16 +75,23 @@ function ModelMenu({ models, modelKey, onModel, onClose, placement, onOpenSettin
       {m.key === modelKey && <Check className="mt-0.5 h-4 w-4 shrink-0 accent-text" strokeWidth={3} />}
     </button>
   );
-  return (
+  return createPortal(
     <motion.div
+      ref={panelRef}
       variants={pop}
       initial="hidden"
       animate="show"
       exit="exit"
-      className={cn("absolute right-0 z-50 w-[min(340px,86vw)]", placement === "down" ? "top-full mt-3" : "bottom-full mb-3")}
+      style={{
+        position: "fixed",
+        right: anchor.right,
+        maxHeight,
+        ...(placement === "down" ? { top: anchor.top + 12 } : { bottom: anchor.bottom + 12 }),
+      }}
+      className="z-[120] w-[min(340px,86vw)]"
     >
       <Glass radius={26} strength="md" blur={0.3} backdropBlur={22} solid="rgba(20,12,60,.92)" animate contentClassName="p-1.5" tint="linear-gradient(160deg, rgba(58,38,128,.9), rgba(16,9,50,.94))">
-        <div className="scroll-thin max-h-[52vh] overflow-y-auto">
+        <div className="scroll-thin overflow-y-auto" style={{ maxHeight: maxHeight - 12 }}>
           {featured.map((m) => <Row key={m.key} m={m} />)}
           {rest.length > 0 && (
             <>
@@ -76,7 +104,10 @@ function ModelMenu({ models, modelKey, onModel, onClose, placement, onOpenSettin
                   {rest.map((m, i) => (
                     <div key={m.key}>
                       {(i === 0 || rest[i - 1].provider !== m.provider) && (
-                        <div className="px-3.5 pb-1 pt-2 text-[10.5px] font-medium uppercase tracking-[0.16em] text-white/40">{providerMeta(m.provider).name}</div>
+                        <div className="flex items-center gap-1.5 px-3.5 pb-1 pt-2 text-[10.5px] font-medium uppercase tracking-[0.16em] text-white/40">
+                          <ProviderLogo id={m.provider} className="h-3.5 w-3.5" onDark />
+                          {providerMeta(m.provider).name}
+                        </div>
                       )}
                       <Row m={m} />
                     </div>
@@ -91,7 +122,8 @@ function ModelMenu({ models, modelKey, onModel, onClose, placement, onOpenSettin
           </button>
         </div>
       </Glass>
-    </motion.div>
+    </motion.div>,
+    document.body,
   );
 }
 
@@ -101,26 +133,58 @@ export function Composer(p: Props) {
   const ta = useRef<HTMLTextAreaElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const wrap = useRef<HTMLDivElement>(null);
+  /** The portalled menu itself, so a click inside it is not treated as outside. */
+  const panelRef = useRef<HTMLDivElement>(null);
   const [menu, setMenu] = useState(false);
   const [tools, setToolsOpen] = useState(false);
   const [files, setFiles] = useState<Attachment[]>([]);
+  const [anchor, setAnchor] = useState<Anchor | null>(null);
 
   const model = useMemo(() => p.models.find((m) => m.key === p.modelKey) ?? p.models[0], [p.models, p.modelKey]);
   const [first, ...restName] = (model?.name ?? "No model").split(" ");
 
+  // Grow to four lines and stop. Past that the box scrolls, so a long paste
+  // cannot push the send button and the transcript off the screen.
   useLayoutEffect(() => {
     const el = ta.current;
     if (!el) return;
     el.style.height = "auto";
-    el.style.height = Math.min(el.scrollHeight, 190) + "px";
+    el.style.height = Math.min(el.scrollHeight, MAX_INPUT_HEIGHT) + "px";
   }, [p.value]);
 
   useEffect(() => { ta.current?.focus(); }, [p.focusSignal]);
 
+  // Pin the floating menus to the composer's rectangle, and keep them pinned
+  // when the window changes size. Both render into document.body, so they are
+  // never clipped by an ancestor or painted under the sidebar.
+  useLayoutEffect(() => {
+    if (!menu && !tools) {
+      setAnchor(null);
+      return;
+    }
+    const measure = () => {
+      const el = wrap.current;
+      if (!el) return;
+      const r = el.getBoundingClientRect();
+      setAnchor({
+        left: Math.max(12, r.left),
+        right: Math.max(12, window.innerWidth - r.right),
+        top: r.bottom,
+        bottom: window.innerHeight - r.top,
+      });
+    };
+    measure();
+    window.addEventListener("resize", measure);
+    return () => window.removeEventListener("resize", measure);
+  }, [menu, tools]);
+
   useEffect(() => {
     if (!menu && !tools) return;
     const down = (e: PointerEvent) => {
-      if (wrap.current && !wrap.current.contains(e.target as Node)) { setMenu(false); setToolsOpen(false); }
+      const target = e.target as Node;
+      if (wrap.current?.contains(target) || panelRef.current?.contains(target)) return;
+      setMenu(false);
+      setToolsOpen(false);
     };
     const key = (e: KeyboardEvent) => { if (e.key === "Escape") { setMenu(false); setToolsOpen(false); } };
     window.addEventListener("pointerdown", down);
@@ -147,11 +211,20 @@ export function Composer(p: Props) {
     if (fileRef.current) fileRef.current.value = "";
   };
 
-  const placementClass = p.placement === "down" ? "top-full mt-3" : "bottom-full mb-3";
   const TOOL_ROWS = [
     { id: "web", icon: Globe, name: "Web search" }, { id: "code", icon: Terminal, name: "Shell & code" },
     { id: "files", icon: FileText, name: "Workspace files" }, { id: "memory", icon: Brain, name: "Memory" },
   ] as const;
+  // A panel anchored near the edge of the window must scroll inside the space
+  // that is actually left, or its last rows end up off-screen.
+  const panelHeight = anchor
+    ? Math.max(
+        180,
+        p.placement === "down"
+          ? window.innerHeight - anchor.top - 24
+          : window.innerHeight - anchor.bottom - 24,
+      )
+    : 420;
   const activeTools = Object.values(state.tools).filter(Boolean).length;
   const research = state.researchMode;
   const autoResearch = looksLikeResearch(p.value);
@@ -177,7 +250,7 @@ export function Composer(p: Props) {
             if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); send(); }
             if (e.key === "Escape") p.onChange("");
           }}
-          className="block max-h-[190px] min-h-[30px] w-full resize-none bg-transparent px-1 text-[16.5px] leading-[1.55] text-white outline-none placeholder:text-white/65"
+          className="scroll-thin block max-h-[104px] min-h-[30px] w-full resize-none overscroll-contain bg-transparent px-1 pr-2.5 text-[16.5px] leading-[1.55] text-white outline-none placeholder:text-white/65"
         />
         <div className="mt-3 flex items-center gap-1.5">
           <input ref={fileRef} type="file" multiple hidden onChange={(e) => onFiles(e.target.files)} />
@@ -218,17 +291,37 @@ export function Composer(p: Props) {
       </Glass>
 
       <AnimatePresence>
-        {menu && <ModelMenu models={p.models} modelKey={p.modelKey} onModel={p.onModel} onClose={() => setMenu(false)} placement={p.placement} onOpenSettings={p.onOpenSettings} />}
+        {menu && anchor && (
+          <ModelMenu
+            models={p.models}
+            modelKey={p.modelKey}
+            onModel={p.onModel}
+            onClose={() => setMenu(false)}
+            placement={p.placement}
+            onOpenSettings={p.onOpenSettings}
+            anchor={anchor}
+            panelRef={panelRef}
+            maxHeight={panelHeight}
+          />
+        )}
       </AnimatePresence>
 
       <AnimatePresence>
-        {tools && (
+        {tools && anchor && createPortal(
           <motion.div
+            ref={panelRef}
             variants={pop}
             initial="hidden"
             animate="show"
             exit="exit"
-            className={cn("glass-css absolute left-0 z-50 w-[min(300px,86vw)] rounded-3xl p-2", placementClass)}
+            style={{
+              position: "fixed",
+              left: anchor.left,
+              maxHeight: panelHeight,
+              overflowY: "auto",
+              ...(p.placement === "down" ? { top: anchor.top + 12 } : { bottom: anchor.bottom + 12 }),
+            }}
+            className="glass-css z-[120] w-[min(300px,86vw)] rounded-3xl p-2"
           >
             {TOOL_ROWS.map((t) => (
               <div key={t.id} className="flex items-center gap-3 rounded-2xl px-3 py-2.5">
@@ -246,7 +339,8 @@ export function Composer(p: Props) {
                 />
               </div>
             ))}
-          </motion.div>
+          </motion.div>,
+          document.body,
         )}
       </AnimatePresence>
     </div>

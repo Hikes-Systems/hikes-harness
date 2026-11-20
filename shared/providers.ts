@@ -13,8 +13,6 @@ export interface ProviderMeta {
   id: ProviderId;
   name: string;
   tagline: string;
-  mono: string;
-  grad: [string, string];
   kind: ProviderKind;
   needsKey: boolean;
   defaultBase: string;
@@ -28,8 +26,6 @@ export const PROVIDERS: ProviderMeta[] = [
     id: "anthropic",
     name: "Anthropic",
     tagline: "Claude models — deep reasoning & careful writing",
-    mono: "A",
-    grad: ["#ffb08a", "#e0613f"],
     kind: "anthropic",
     needsKey: true,
     defaultBase: "https://api.anthropic.com",
@@ -41,8 +37,6 @@ export const PROVIDERS: ProviderMeta[] = [
     id: "openai",
     name: "OpenAI",
     tagline: "GPT family — versatile, fast, tool-savvy",
-    mono: "O",
-    grad: ["#86f0c9", "#1c9a78"],
     kind: "openai",
     needsKey: true,
     defaultBase: "https://api.openai.com/v1",
@@ -54,8 +48,6 @@ export const PROVIDERS: ProviderMeta[] = [
     id: "google",
     name: "Google Gemini",
     tagline: "Gemini — huge context, multimodal",
-    mono: "G",
-    grad: ["#9cc2ff", "#5a6cf0"],
     kind: "google",
     needsKey: true,
     defaultBase: "https://generativelanguage.googleapis.com",
@@ -67,8 +59,6 @@ export const PROVIDERS: ProviderMeta[] = [
     id: "deepseek",
     name: "DeepSeek",
     tagline: "DeepSeek Chat — strong tools at low cost",
-    mono: "D",
-    grad: ["#a7c4ff", "#4d6bfe"],
     kind: "openai",
     needsKey: true,
     defaultBase: "https://api.deepseek.com",
@@ -80,8 +70,6 @@ export const PROVIDERS: ProviderMeta[] = [
     id: "openrouter",
     name: "OpenRouter",
     tagline: "One key, hundreds of models",
-    mono: "R",
-    grad: ["#d3a8ff", "#8a4fe0"],
     kind: "openai",
     needsKey: true,
     defaultBase: "https://openrouter.ai/api/v1",
@@ -93,8 +81,6 @@ export const PROVIDERS: ProviderMeta[] = [
     id: "ollama",
     name: "Ollama",
     tagline: "Run open models locally — private & free",
-    mono: "L",
-    grad: ["#f6e6b8", "#b48f55"],
     kind: "openai",
     needsKey: false,
     defaultBase: "http://localhost:11434",
@@ -106,8 +92,6 @@ export const PROVIDERS: ProviderMeta[] = [
     id: "custom",
     name: "Custom endpoint",
     tagline: "Any OpenAI-compatible API (LM Studio, vLLM…)",
-    mono: "∞",
-    grad: ["#c9d3e8", "#6f7fa0"],
     kind: "openai",
     needsKey: false,
     defaultBase: "http://localhost:1234/v1",
@@ -131,6 +115,18 @@ export interface ModelInfo {
   supportsTools?: boolean;
   /** No charge for input or output. */
   free?: boolean;
+  /** Context window in tokens. Used for compaction thresholds. */
+  contextWindow?: number;
+  /** USD per million input tokens. */
+  inputPrice?: number;
+  /** USD per million output tokens. */
+  outputPrice?: number;
+}
+
+export interface ModelPricing {
+  contextWindow?: number;
+  inputPrice?: number;
+  outputPrice?: number;
 }
 
 export const modelInfo = (
@@ -139,6 +135,7 @@ export const modelInfo = (
   name: string,
   desc: string,
   supportsTools = true,
+  pricing: ModelPricing = {},
 ): ModelInfo => ({
   key: `${provider}:${id}`,
   provider,
@@ -146,36 +143,37 @@ export const modelInfo = (
   name,
   desc,
   supportsTools,
+  ...pricing,
 });
 
 export const CATALOG: Record<ProviderId, ModelInfo[]> = {
   anthropic: [
-    modelInfo("anthropic", "claude-opus-4-1-20250805", "Claude Opus 4.1", "Powerful, large model for complex challenges"),
-    modelInfo("anthropic", "claude-sonnet-4-20250514", "Claude Sonnet 4", "Smart, efficient model for everyday use"),
-    modelInfo("anthropic", "claude-3-5-haiku-latest", "Claude Haiku 3.5", "Fastest model for quick answers"),
+    modelInfo("anthropic", "claude-opus-4-1-20250805", "Claude Opus 4.1", "Powerful, large model for complex challenges", true, { contextWindow: 200_000, inputPrice: 15, outputPrice: 75 }),
+    modelInfo("anthropic", "claude-sonnet-4-20250514", "Claude Sonnet 4", "Smart, efficient model for everyday use", true, { contextWindow: 200_000, inputPrice: 3, outputPrice: 15 }),
+    modelInfo("anthropic", "claude-3-5-haiku-latest", "Claude Haiku 3.5", "Fastest model for quick answers", true, { contextWindow: 200_000, inputPrice: 0.8, outputPrice: 4 }),
   ],
   openai: [
-    modelInfo("openai", "gpt-4.1", "GPT-4.1", "Flagship model for complex tasks"),
-    modelInfo("openai", "gpt-4.1-mini", "GPT-4.1 mini", "Balanced speed and intelligence"),
-    modelInfo("openai", "gpt-4o", "GPT-4o", "Fast multimodal generalist"),
+    modelInfo("openai", "gpt-4.1", "GPT-4.1", "Flagship model for complex tasks", true, { contextWindow: 1_047_576, inputPrice: 2, outputPrice: 8 }),
+    modelInfo("openai", "gpt-4.1-mini", "GPT-4.1 mini", "Balanced speed and intelligence", true, { contextWindow: 1_047_576, inputPrice: 0.4, outputPrice: 1.6 }),
+    modelInfo("openai", "gpt-4o", "GPT-4o", "Fast multimodal generalist", true, { contextWindow: 128_000, inputPrice: 2.5, outputPrice: 10 }),
   ],
   google: [
-    modelInfo("google", "gemini-2.5-pro", "Gemini 2.5 Pro", "Deep reasoning with long context"),
-    modelInfo("google", "gemini-2.5-flash", "Gemini 2.5 Flash", "Low-latency everyday model"),
+    modelInfo("google", "gemini-2.5-pro", "Gemini 2.5 Pro", "Deep reasoning with long context", true, { contextWindow: 1_048_576, inputPrice: 1.25, outputPrice: 10 }),
+    modelInfo("google", "gemini-2.5-flash", "Gemini 2.5 Flash", "Low-latency everyday model", true, { contextWindow: 1_048_576, inputPrice: 0.3, outputPrice: 2.5 }),
   ],
   deepseek: [
-    modelInfo("deepseek", "deepseek-chat", "DeepSeek Chat", "Strong general model with tool calling"),
-    modelInfo("deepseek", "deepseek-reasoner", "DeepSeek Reasoner", "Reasoning model — text only, no tools", false),
+    modelInfo("deepseek", "deepseek-chat", "DeepSeek Chat", "Strong general model with tool calling", true, { contextWindow: 128_000, inputPrice: 0.27, outputPrice: 1.1 }),
+    modelInfo("deepseek", "deepseek-reasoner", "DeepSeek Reasoner", "Reasoning model — text only, no tools", false, { contextWindow: 128_000, inputPrice: 0.55, outputPrice: 2.19 }),
   ],
   openrouter: [
-    modelInfo("openrouter", "anthropic/claude-sonnet-4", "Claude Sonnet 4", "via OpenRouter"),
-    modelInfo("openrouter", "openai/gpt-4.1", "GPT-4.1", "via OpenRouter"),
-    modelInfo("openrouter", "google/gemini-2.5-pro", "Gemini 2.5 Pro", "via OpenRouter"),
-    modelInfo("openrouter", "meta-llama/llama-3.3-70b-instruct", "Llama 3.3 70B", "Open weights via OpenRouter"),
+    modelInfo("openrouter", "anthropic/claude-sonnet-4", "Claude Sonnet 4", "via OpenRouter", true, { contextWindow: 200_000, inputPrice: 3, outputPrice: 15 }),
+    modelInfo("openrouter", "openai/gpt-4.1", "GPT-4.1", "via OpenRouter", true, { contextWindow: 1_047_576, inputPrice: 2, outputPrice: 8 }),
+    modelInfo("openrouter", "google/gemini-2.5-pro", "Gemini 2.5 Pro", "via OpenRouter", true, { contextWindow: 1_048_576, inputPrice: 1.25, outputPrice: 10 }),
+    modelInfo("openrouter", "meta-llama/llama-3.3-70b-instruct", "Llama 3.3 70B", "Open weights via OpenRouter", true, { contextWindow: 128_000 }),
   ],
   ollama: [
-    modelInfo("ollama", "llama3.2", "Llama 3.2", "Local · runs on your machine"),
-    modelInfo("ollama", "qwen2.5-coder", "Qwen 2.5 Coder", "Local · tuned for code"),
+    modelInfo("ollama", "llama3.2", "Llama 3.2", "Local · runs on your machine", true, { contextWindow: 131_072, inputPrice: 0, outputPrice: 0 }),
+    modelInfo("ollama", "qwen2.5-coder", "Qwen 2.5 Coder", "Local · tuned for code", true, { contextWindow: 32_768, inputPrice: 0, outputPrice: 0 }),
   ],
   custom: [],
 };

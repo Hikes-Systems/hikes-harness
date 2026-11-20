@@ -24,7 +24,15 @@ export interface AgentMessage {
 export type ModelEvent =
   | { type: "text"; text: string }
   | { type: "tool_call"; call: ToolCall }
-  | { type: "usage"; inputTokens?: number; outputTokens?: number }
+  | {
+      type: "usage";
+      inputTokens?: number;
+      outputTokens?: number;
+      /** Prompt tokens the provider read from its prompt cache. */
+      cachedTokens?: number;
+      /** Prompt tokens the provider wrote into its prompt cache. */
+      cacheWriteTokens?: number;
+    }
   | { type: "done" };
 
 export interface LLMRequest {

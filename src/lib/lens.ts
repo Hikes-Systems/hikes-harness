@@ -1,73 +1,72 @@
 /**
- * Canvas-generated displacement map for the shell's edge lens.
- *
- * Each pixel encodes a vector that points toward the centre of the panel,
- * strongest at the rounded rim and zero in the middle. The shell feeds this
- * into an SVG feDisplacementMap so the wallpaper bends at the glass edge,
- * which is what separates liquid glass from a plain frosted blur.
+ * Geometry for the glass rim. The rim lens is a second copy of the wallpaper,
+ * clipped to a soft ring around the panel edge, so it must share the shell's
+ * exact rectangle and corner radius.
  */
+export interface LensGeometry {
+  /** Layer size in CSS pixels. */
+  width: number;
+  height: number;
+  /** Glass panel rectangle inside the layer, in CSS pixels. */
+  panel: {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+    radius: number;
+  };
+  /** Width of the lens band, in CSS pixels. */
+  band?: number;
+}
+
 const cache = new Map<string, string>();
 
-const smoothStep = (edge0: number, edge1: number, value: number): number => {
-  const t = Math.max(0, Math.min(1, (value - edge0) / (edge1 - edge0)));
-  return t * t * (3 - 2 * t);
+const roundedRect = (x: number, y: number, width: number, height: number, radius: number): string => {
+  const r = Math.max(0, Math.min(radius, width / 2, height / 2));
+  return [
+    `M${x + r} ${y}`,
+    `H${x + width - r}`,
+    `A${r} ${r} 0 0 1 ${x + width} ${y + r}`,
+    `V${y + height - r}`,
+    `A${r} ${r} 0 0 1 ${x + width - r} ${y + height}`,
+    `H${x + r}`,
+    `A${r} ${r} 0 0 1 ${x} ${y + height - r}`,
+    `V${y + r}`,
+    `A${r} ${r} 0 0 1 ${x + r} ${y}`,
+    "Z",
+  ].join(" ");
 };
 
-const roundedRectSDF = (x: number, y: number, halfW: number, halfH: number, radius: number): number => {
-  const qx = Math.abs(x) - halfW + radius;
-  const qy = Math.abs(y) - halfH + radius;
-  return Math.min(Math.max(qx, qy), 0) + Math.hypot(Math.max(qx, 0), Math.max(qy, 0)) - radius;
-};
-
-export function lensMap(width = 512, height = 336): string {
-  const key = `${width}x${height}`;
+/**
+ * Soft ring mask for the rim copy. The centre is punched out so the live
+ * wallpaper can show through the clear glass; the ring fades inward so the
+ * magnified rim blends into the untouched backdrop.
+ */
+export function lensMask({ width, height, panel, band = 46 }: LensGeometry): string {
+  if (typeof document === "undefined" || width < 2 || height < 2) return "";
+  const key = `mask:${Math.round(width)}x${Math.round(height)}:${Math.round(panel.x)},${Math.round(panel.y)},${Math.round(panel.width)},${Math.round(panel.height)},${Math.round(panel.radius)},${band}`;
   const hit = cache.get(key);
   if (hit) return hit;
-  if (typeof document === "undefined") return "";
 
-  const canvas = document.createElement("canvas");
-  canvas.width = width;
-  canvas.height = height;
-  const context = canvas.getContext("2d");
-  if (!context) return "";
-
-  const image = context.createImageData(width, height);
-  const data = image.data;
-  const dxs = new Float32Array(width * height);
-  const dys = new Float32Array(width * height);
-  let max = 0;
-  let index = 0;
-
-  for (let y = 0; y < height; y++) {
-    for (let x = 0; x < width; x++) {
-      const ix = (x + 0.5) / width - 0.5;
-      const iy = (y + 0.5) / height - 0.5;
-      // Contour sits on the panel edge; negative inside.
-      const distance = roundedRectSDF(ix, iy, 0.5, 0.5, 0.14);
-      // Lens band: ~3% of the panel wraps the rim.
-      const band = smoothStep(0.032, 0, Math.abs(distance));
-      const pull = band * band;
-      // Bend toward the centre. The map is normalised below.
-      const dx = -ix * pull * 2;
-      const dy = -iy * pull * 2;
-      dxs[index] = dx;
-      dys[index] = dy;
-      max = Math.max(max, Math.abs(dx), Math.abs(dy));
-      index++;
-    }
-  }
-
-  const scale = Math.max(max, 1e-4);
-  for (let pixel = 0; pixel < dxs.length; pixel++) {
-    const offset = pixel * 4;
-    data[offset] = Math.round((dxs[pixel] / scale) * 127.5 + 127.5);
-    data[offset + 1] = Math.round((dys[pixel] / scale) * 127.5 + 127.5);
-    data[offset + 2] = data[offset + 1];
-    data[offset + 3] = 255;
-  }
-
-  context.putImageData(image, 0, 0);
-  const url = canvas.toDataURL("image/png");
+  const inset = Math.min(band, panel.width / 2, panel.height / 2);
+  const inner = {
+    x: panel.x + inset,
+    y: panel.y + inset,
+    width: Math.max(1, panel.width - inset * 2),
+    height: Math.max(1, panel.height - inset * 2),
+    radius: Math.max(0, panel.radius - inset),
+  };
+  const outerPath = roundedRect(panel.x, panel.y, panel.width, panel.height, panel.radius);
+  const innerPath = roundedRect(inner.x, inner.y, inner.width, inner.height, inner.radius);
+  const fade = Math.max(2, Math.min(9, inset * 0.22));
+  const svg = [
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${Math.round(width)}" height="${Math.round(height)}">`,
+    `<defs><filter id="f" x="-12%" y="-12%" width="124%" height="124%"><feGaussianBlur stdDeviation="${fade.toFixed(1)}"/></filter></defs>`,
+    `<path fill="white" fill-rule="evenodd" filter="url(#f)" d="${outerPath} ${innerPath}"/>`,
+    "</svg>",
+  ].join("");
+  const url = `url("data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}")`;
+  if (cache.size > 8) cache.clear();
   cache.set(key, url);
   return url;
 }

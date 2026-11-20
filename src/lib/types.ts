@@ -1,5 +1,9 @@
 export type {
   ApprovalRequest,
+  FileChange,
+  McpServerConfig,
+  McpServerStatus,
+  McpToolInfo,
   Msg,
   MsgStatus,
   RunMode,

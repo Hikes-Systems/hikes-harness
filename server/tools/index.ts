@@ -32,6 +32,7 @@ export const toolKind = (name: string): StepKind => {
   if (name === "run_command") return "code";
   if (name === "remember" || name === "recall") return "memory";
   if (name === "spawn_subagent") return "agent";
+  if (name.startsWith("mcp__")) return "code";
   return "file";
 };
 
@@ -47,6 +48,8 @@ export const toolLabel = (name: string): string => {
       return "Reading a file";
     case "write_file":
       return "Writing a file";
+    case "edit_file":
+      return "Editing a file";
     case "search_files":
       return "Searching the workspace";
     case "run_command":
@@ -58,6 +61,7 @@ export const toolLabel = (name: string): string => {
     case "spawn_subagent":
       return "Delegating to a sub-agent";
     default:
+      if (name.startsWith("mcp__")) return "Calling an MCP tool";
       return name;
   }
 };
@@ -72,6 +76,7 @@ export function toolDetail(name: string, args: Record<string, unknown>): string 
       return typeof args.path === "string" && args.path ? args.path : "workspace root";
     case "read_file":
     case "write_file":
+    case "edit_file":
       return typeof args.path === "string" ? args.path : "";
     case "search_files":
       return typeof args.query === "string" ? `“${args.query}”` : "";
@@ -94,6 +99,8 @@ export function describeToolCall(name: string, args: Record<string, unknown>): s
       return `Run command: ${String(args.command ?? "").slice(0, 180)}`;
     case "write_file":
       return `Write file: ${String(args.path ?? "")}`;
+    case "edit_file":
+      return `Edit file: ${String(args.path ?? "")}`;
     case "web_search":
       return `Search the web: ${String(args.query ?? "").slice(0, 140)}`;
     case "fetch_url":

@@ -7,7 +7,7 @@ import { viteSingleFile } from "vite-plugin-singlefile";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-// Standalone `npm run dev` proxy target. The `hikes` launcher injects the real port.
+// Standalone `npm run dev` proxy target. The server launcher injects the real port.
 const apiPort = 8787;
 
 // https://vite.dev/config/

@@ -34,17 +34,64 @@ export interface ToolFlags {
   memory: boolean;
 }
 
+/** A Model Context Protocol server launched over stdio. */
+export interface McpServerConfig {
+  id: string;
+  name: string;
+  command: string;
+  args: string[];
+  env: Record<string, string>;
+  enabled: boolean;
+}
+
+export interface McpToolInfo {
+  name: string;
+  description?: string;
+}
+
+export interface McpServerStatus extends McpServerConfig {
+  connected: boolean;
+  tools: McpToolInfo[];
+  error?: string;
+  /** Set when the server was reachable but has not been started this session. */
+  offline?: boolean;
+}
+
 export interface Source {
   title: string;
   host: string;
   url?: string;
 }
 
-export type StepKind = "think" | "search" | "file" | "code" | "memory" | "write" | "research" | "agent";
+export type StepKind =
+  | "think"
+  | "search"
+  | "file"
+  | "code"
+  | "memory"
+  | "write"
+  | "research"
+  | "agent"
+  | "compact";
 export type StepState = "running" | "done";
 export type ToolRisk = "safe" | "write" | "execute";
 export type ToolStatus = "pending" | "approved" | "denied" | "done" | "error";
 export type RunMode = "chat" | "research";
+
+/** A file the agent changed, with a compact diff and a revert handle. */
+export interface FileChange {
+  path: string;
+  tool: string;
+  additions: number;
+  deletions: number;
+  /** Unified-style hunk, capped for transport. */
+  diff: string;
+  /** The file did not exist before this change. */
+  created: boolean;
+  /** Set once the change has been undone. */
+  reverted?: boolean;
+  snapshotId?: string;
+}
 
 export interface ToolStep {
   name: string;
@@ -53,6 +100,7 @@ export interface ToolStep {
   status: ToolStatus;
   output?: string;
   ok?: boolean;
+  changes?: FileChange[];
 }
 
 export interface Step {
@@ -71,7 +119,19 @@ export interface Usage {
   inputTokens?: number;
   outputTokens?: number;
   totalTokens?: number;
+  /** Prompt tokens the provider served from its own prompt cache. */
+  cachedTokens?: number;
+  /** Prompt tokens written to the provider's prompt cache by this run. */
+  cacheWriteTokens?: number;
   estimated?: boolean;
+  /** Estimated cost in USD (0 when the model is free or priced unknown). */
+  costUsd?: number;
+  /** True when the cost comes from list prices rather than provider billing. */
+  costEstimated?: boolean;
+  /** Model context window, when known. */
+  contextWindow?: number;
+  /** Share of the context window this run is estimated to have used (0-1). */
+  contextUsed?: number;
 }
 
 export interface ApprovalRequest {
@@ -164,6 +224,10 @@ export interface Bootstrap {
   search: { tavily: boolean; brave: boolean };
   memoryCount: number;
   tokenRequired: boolean;
+  /** True when the onboarding wizard has already been completed on this machine. */
+  onboarded: boolean;
+  /** A mirror of the interface state, used to restore a fresh browser origin. */
+  ui?: Record<string, unknown> | null;
 }
 
 export interface TestProviderResult {
@@ -177,6 +241,8 @@ export interface SettingsPatch {
   workspace?: string;
   tools?: ToolFlags;
   autonomy?: Autonomy;
+  onboarded?: boolean;
+  ui?: Record<string, unknown>;
   search?: {
     tavilyKey?: string;
     braveKey?: string;
@@ -191,6 +257,8 @@ export interface RunRequest {
   full: string;
   files: string[];
   agentId: string;
+  /** User-defined display name for the active agent. */
+  agentName?: string;
   modelKey: string;
   tools: ToolFlags;
   autonomy: Autonomy;
@@ -222,6 +290,7 @@ export type RunEvent =
       sources?: Source[];
       output?: string;
       toolStatus?: ToolStatus;
+      changes?: FileChange[];
     }
   | { type: "text.delta"; delta: string }
   | { type: "tool.approval"; request: ApprovalRequest }

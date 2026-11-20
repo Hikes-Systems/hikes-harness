@@ -4,6 +4,9 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#0b0b33" />
+    <!-- The launch token arrives in the URL on first load. Never let it travel
+         in a Referer header, including to the font CDN below. -->
+    <meta name="referrer" content="no-referrer" />
     <meta
       name="description"
       content="Hikes — a local-first agent harness with real tools, persistent sessions and your own model keys."
@@ -11,10 +14,10 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
-      href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=Instrument+Serif:ital@0;1&family=JetBrains+Mono:wght@400;500&display=swap"
+      href="https://fonts.googleapis.com/css2?family=Geist:wght@300..700&family=Geist+Mono:wght@400;500&display=swap"
       rel="stylesheet"
     />
-    <title>Ridgeline — Hikes local agent harness</title>
+    <title>Hikes — local agent harness</title>
   </head>
   <body>
     <div id="root"></div>

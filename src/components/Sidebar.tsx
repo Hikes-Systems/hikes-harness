@@ -1,11 +1,7 @@
 import { useMemo, useState } from "react";
 import { motion } from "framer-motion";
 import {
-  Compass,
   Download,
-  Feather,
-  Hammer,
-  Mountain,
   PanelLeftClose,
   Plus,
   Search,
@@ -14,13 +10,10 @@ import {
 } from "lucide-react";
 import { MountainMark } from "./ui";
 import { useStore } from "../store";
+import { resolveAgent } from "../lib/mascots";
 import type { SessionSummary } from "../lib/types";
 import { cn } from "../utils/cn";
 import { listItem, listStagger, spring } from "../lib/motion";
-
-const ICONS = { ridge: Mountain, scout: Compass, forge: Hammer, quill: Feather } as const;
-
-export const agentIcon = (id: string) => ICONS[id as keyof typeof ICONS] ?? Mountain;
 
 interface Props {
   sessions: SessionSummary[];
@@ -42,27 +35,22 @@ export function Sidebar({ sessions, activeId, onSelect, onNew, onDelete, onExpor
         (s) =>
           (s.messageCount > 0 || s.id === activeId) &&
           (s.title.toLowerCase().includes(q.toLowerCase()) ||
-            s.agent.toLowerCase().includes(q.toLowerCase())),
+            resolveAgent(s.agent, state.agents).name.toLowerCase().includes(q.toLowerCase())),
       ),
-    [sessions, activeId, q],
+    [sessions, activeId, q, state.agents],
   );
   const name = state.profile.name || "You";
 
   return (
-    <motion.div
-      initial={{ x: -18, opacity: 0 }}
-      animate={{ x: 0, opacity: 1 }}
-      transition={spring.smooth}
-      className="glass-css flex h-full w-full flex-col rounded-[26px] p-3"
-    >
+    <div className="glass-css flex h-full w-full flex-col rounded-[26px] p-3">
       <div className="flex items-center justify-between px-2 pb-3 pt-1.5">
         <div className="flex items-center gap-2.5">
           <span className="grid h-9 w-9 place-items-center rounded-xl" style={{ background: "linear-gradient(145deg, rgba(255,255,255,.28), rgba(255,255,255,.06))", boxShadow: "inset 0 1px 0 rgba(255,255,255,.6)" }}>
             <MountainMark className="accent-text h-5 w-5" />
           </span>
           <div className="leading-none">
-            <span className="font-serif text-[24px] leading-none">Ridgeline</span>
-            <span className="mt-0.5 block text-[10.5px] uppercase tracking-[0.2em] text-white/40">Hikes harness</span>
+            <span className="font-serif text-[24px] leading-none">Hikes</span>
+            <span className="mt-0.5 block text-[10.5px] uppercase tracking-[0.2em] text-white/40">agent harness</span>
           </div>
         </div>
         <button onClick={onClose} className="grid h-8 w-8 place-items-center rounded-full text-white/60 transition hover:bg-white/12 hover:text-white" aria-label="Hide sidebar"><PanelLeftClose className="h-[18px] w-[18px]" /></button>
@@ -88,23 +76,30 @@ export function Sidebar({ sessions, activeId, onSelect, onNew, onDelete, onExpor
         {list.length === 0 && <p className="px-3 py-4 text-[13px] text-white/45">{q ? "No matches." : "Your sessions will appear here."}</p>}
         <motion.div variants={listStagger} initial="hidden" animate="show" className="space-y-0.5">
           {list.map((s) => {
-            const Icon = agentIcon(s.agent);
+            const { Icon } = resolveAgent(s.agent, state.agents);
             return (
               <motion.div
                 key={s.id}
                 variants={listItem}
                 layout
                 className={cn(
-                  "group flex items-center rounded-2xl transition-colors",
-                  s.id === activeId ? "bg-white/[0.16] shadow-[inset_0_1px_0_rgba(255,255,255,.3)]" : "hover:bg-white/[0.09]",
+                  "group relative flex items-center rounded-2xl transition-colors",
+                  s.id !== activeId && "hover:bg-white/[0.09]",
                 )}
               >
-                <button onClick={() => onSelect(s.id)} className="flex min-w-0 flex-1 items-center gap-2.5 px-3 py-2.5 text-left outline-none">
+                {s.id === activeId && (
+                  <motion.span
+                    layoutId="session-active-pill"
+                    transition={spring.smooth}
+                    className="absolute inset-0 rounded-2xl bg-white/[0.16] shadow-[inset_0_1px_0_rgba(255,255,255,.3)]"
+                  />
+                )}
+                <button onClick={() => onSelect(s.id)} className="relative z-10 flex min-w-0 flex-1 items-center gap-2.5 px-3 py-2.5 text-left outline-none">
                   <Icon className={cn("h-4 w-4 shrink-0", s.id === activeId ? "accent-text" : "text-white/50")} />
                   <span className="truncate text-[13.5px]">{s.title}</span>
                   {s.messageCount > 0 && <span className="ml-auto shrink-0 font-mono text-[10.5px] text-white/30">{s.messageCount}</span>}
                 </button>
-                <div className="mr-1.5 hidden shrink-0 items-center gap-0.5 group-hover:flex group-focus-within:flex">
+                <div className="relative z-10 mr-1.5 hidden shrink-0 items-center gap-0.5 group-hover:flex group-focus-within:flex">
                   <button onClick={() => onExport(s.id)} className="grid h-7 w-7 place-items-center rounded-full text-white/50 transition hover:bg-white/15 hover:text-white" aria-label={`Export ${s.title}`} title="Export as Markdown"><Download className="h-3.5 w-3.5" /></button>
                   <button onClick={() => onDelete(s.id)} className="grid h-7 w-7 place-items-center rounded-full text-white/50 transition hover:bg-white/15 hover:text-white" aria-label={`Delete ${s.title}`} title="Delete session"><Trash2 className="h-3.5 w-3.5" /></button>
                 </div>
@@ -129,6 +124,6 @@ export function Sidebar({ sessions, activeId, onSelect, onNew, onDelete, onExpor
         </span>
         <Settings2 className="h-[18px] w-[18px] text-white/60" />
       </button>
-    </motion.div>
+    </div>
   );
 }

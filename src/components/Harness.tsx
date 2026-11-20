@@ -9,6 +9,7 @@ import {
   Compass,
   Download,
   ListChecks,
+  Minimize2,
   PanelLeft,
   PanelRight,
   Palette,
@@ -19,28 +20,31 @@ import {
 } from "lucide-react";
 import { Composer, type Attachment } from "./Composer";
 import { MessageView } from "./Chat";
-import { Sidebar, agentIcon } from "./Sidebar";
+import { Sidebar } from "./Sidebar";
 import { Inspector } from "./Inspector";
-import { Settings } from "./Settings";
-import { CommandPalette, type SettingsTab } from "./CommandPalette";
+import { Settings, type SettingsTab } from "./Settings";
+import { CommandPalette } from "./CommandPalette";
 import { Burst, Spinner } from "./ui";
 import { useStore } from "../store";
 import { useServer } from "../lib/server";
-import { AGENTS, agentById } from "@shared/agents";
+import { AGENTS, DEFAULT_AGENT_ID } from "@shared/agents";
+import { resolveAgent } from "../lib/mascots";
 import { providerMeta } from "@shared/providers";
 import type { Msg, RunRequest, Session, SessionSummary } from "@shared/protocol";
 import {
   cancelRun,
+  compactSession,
   createSession,
   deleteSession,
   getSession,
   listSessions,
   patchSession,
   resolveApproval,
+  revertStep,
   streamRun,
 } from "../lib/api";
 import { SCENES } from "../lib/scenes";
-import { pop, spring } from "../lib/motion";
+import { ease, pop, spring } from "../lib/motion";
 import { cn } from "../utils/cn";
 
 const CHIPS = [
@@ -72,6 +76,8 @@ function AgentMenu({
   onPick: (id: string) => void;
   onClose: () => void;
 }) {
+  const { state } = useStore();
+  const selectedId = resolveAgent(current, state.agents).id;
   return (
     <>
       <div className="fixed inset-0 z-40" onClick={onClose} />
@@ -82,9 +88,10 @@ function AgentMenu({
         exit="exit"
         className="glass-shell absolute left-0 top-full z-50 mt-2 w-[min(300px,86vw)] overflow-hidden rounded-3xl p-1.5"
       >
-        {AGENTS.map((agent) => {
-          const Icon = agentIcon(agent.id);
-          const on = agent.id === current;
+        {AGENTS.map((definition) => {
+          const agent = resolveAgent(definition.id, state.agents);
+          const Icon = agent.Icon;
+          const on = agent.id === selectedId;
           return (
             <button
               key={agent.id}
@@ -141,13 +148,16 @@ export function Harness() {
   const [agentMenu, setAgentMenu] = useState(false);
   const [exported, setExported] = useState(false);
   const [focusSignal, setFocusSignal] = useState(0);
+  const [revertBusy, setRevertBusy] = useState(false);
+  const [compactBusy, setCompactBusy] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
   const runIdRef = useRef<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const scroller = useRef<HTMLDivElement>(null);
   const stick = useRef(true);
 
-  const agent = agentById(active?.agent ?? "ridge");
-  const AgentIcon = agentIcon(active?.agent ?? "ridge");
+  const agent = resolveAgent(active?.agent ?? DEFAULT_AGENT_ID, state.agents);
+  const AgentIcon = agent.Icon;
   const empty = !active || active.messages.length === 0;
 
   const refreshSummaries = useCallback(async () => {
@@ -164,7 +174,7 @@ export function Harness() {
     try {
       let list = await listSessions();
       if (!list.length) {
-        const created = await createSession("ridge");
+        const created = await createSession(DEFAULT_AGENT_ID);
         list = await listSessions();
         setSummaries(list);
         setActive(created);
@@ -184,6 +194,74 @@ export function Harness() {
   }, [loadInitial]);
 
   useEffect(() => () => abortRef.current?.abort(), []);
+
+  useEffect(() => {
+    if (!notice) return;
+    const timer = window.setTimeout(() => setNotice(null), 4500);
+    return () => window.clearTimeout(timer);
+  }, [notice]);
+
+  /** Undo the file changes made by one step and mark the card as reverted. */
+  const revertToStep = useCallback(
+    async (stepId: string) => {
+      const sessionId = active?.id;
+      if (!sessionId) return;
+      setRevertBusy(true);
+      setRunError(null);
+      try {
+        const result = await revertStep(sessionId, stepId);
+        setActive((prev) =>
+          prev
+            ? {
+                ...prev,
+                messages: prev.messages.map((message) => ({
+                  ...message,
+                  steps: message.steps?.map((step) =>
+                    step.id === stepId && step.tool?.changes
+                      ? {
+                          ...step,
+                          tool: {
+                            ...step.tool,
+                            changes: step.tool.changes.map((change) => ({ ...change, reverted: true })),
+                          },
+                        }
+                      : step,
+                  ),
+                })),
+              }
+            : prev,
+        );
+        setNotice(
+          result.reverted.length
+            ? `Reverted ${result.reverted.length} file${result.reverted.length === 1 ? "" : "s"}.`
+            : "Nothing to revert.",
+        );
+      } catch (caught) {
+        setRunError(errorText(caught));
+      } finally {
+        setRevertBusy(false);
+      }
+    },
+    [active?.id],
+  );
+
+  /** Fold the older turns of this session into a digest. */
+  const compactContext = useCallback(async () => {
+    const sessionId = active?.id;
+    if (!sessionId) return;
+    setCompactBusy(true);
+    setRunError(null);
+    try {
+      const result = await compactSession(sessionId);
+      setNotice(
+        `Compacted ${result.compactedMessages} earlier message${result.compactedMessages === 1 ? "" : "s"} · ~${result.savedTokens.toLocaleString()} tokens saved.`,
+      );
+    } catch (caught) {
+      setRunError(errorText(caught));
+    } finally {
+      setCompactBusy(false);
+    }
+  }, [active?.id]);
 
   const lastRun = active ? [...active.messages].reverse().find((m) => m.role === "assistant") : undefined;
   const lastPrompt = lastRun && active ? active.messages[active.messages.indexOf(lastRun) - 1] : undefined;
@@ -219,11 +297,11 @@ export function Harness() {
       abortRef.current = controller;
       let assistantId = "";
       let buffer = "";
-      let raf = 0;
+      let timer = 0;
       let ended = false;
 
       const flush = () => {
-        raf = 0;
+        timer = 0;
         const chunk = buffer;
         buffer = "";
         if (!chunk || !assistantId) return;
@@ -284,6 +362,7 @@ export function Harness() {
                               output: event.output ?? s.tool.output,
                               ok: event.ok ?? s.tool.ok,
                               status: event.toolStatus ?? s.tool.status,
+                              changes: event.changes ?? s.tool.changes,
                             }
                           : s.tool,
                       }
@@ -318,7 +397,7 @@ export function Harness() {
               break;
             case "text.delta":
               buffer += event.delta;
-              if (!raf) raf = requestAnimationFrame(flush);
+              if (!timer) timer = window.setTimeout(flush, 45);
               break;
             case "tool.approval":
               if (!assistantId) break;
@@ -331,8 +410,8 @@ export function Harness() {
               break;
             case "run.end":
               ended = true;
-              if (raf) cancelAnimationFrame(raf);
-              raf = 0;
+              if (timer) window.clearTimeout(timer);
+              timer = 0;
               buffer = "";
               setActive((prev) =>
                 prev && prev.id === payload.sessionId
@@ -360,8 +439,8 @@ export function Harness() {
           }
         }
 
-        if (raf) cancelAnimationFrame(raf);
-        raf = 0;
+        if (timer) window.clearTimeout(timer);
+        timer = 0;
         flush();
 
         if (!ended && assistantId) {
@@ -404,7 +483,7 @@ export function Harness() {
           );
         }
       } finally {
-        if (raf) cancelAnimationFrame(raf);
+        if (timer) window.clearTimeout(timer);
         setRunning(false);
         setApprovalBusy(false);
         abortRef.current = null;
@@ -435,7 +514,8 @@ export function Harness() {
         text: trimmed || "(attachments)",
         full,
         files: files.map((f) => f.name),
-        agentId: active.agent,
+        agentId: agent.id,
+        agentName: agent.name,
         modelKey: model.key,
         tools: state.tools,
         autonomy: state.autonomy,
@@ -444,7 +524,7 @@ export function Harness() {
       };
       void startRun(payload);
     },
-    [active, running, model, state.tools, state.autonomy, state.profile, state.researchMode, startRun],
+    [active, running, model, agent.id, agent.name, state.tools, state.autonomy, state.profile, state.researchMode, startRun],
   );
 
   const regenerate = useCallback(() => {
@@ -456,7 +536,8 @@ export function Harness() {
       text: lastPrompt.text,
       full: lastPrompt.full ?? lastPrompt.text,
       files: lastPrompt.files ?? [],
-      agentId: active.agent,
+      agentId: agent.id,
+      agentName: agent.name,
       modelKey: model.key,
       tools: state.tools,
       autonomy: state.autonomy,
@@ -465,7 +546,7 @@ export function Harness() {
       retryOf: lastRun.id,
     };
     void startRun(payload, index);
-  }, [active, running, model, lastRun, lastPrompt, state.tools, state.autonomy, state.profile, state.researchMode, startRun]);
+  }, [active, running, model, agent.id, agent.name, lastRun, lastPrompt, state.tools, state.autonomy, state.profile, state.researchMode, startRun]);
 
   const newSession = useCallback(async () => {
     if (running) return;
@@ -474,7 +555,7 @@ export function Harness() {
       return;
     }
     try {
-      const created = await createSession(active?.agent ?? "ridge");
+      const created = await createSession(DEFAULT_AGENT_ID);
       setActive(created);
       await refreshSummaries();
       setDraft("");
@@ -517,7 +598,7 @@ export function Harness() {
           if (list.length) {
             setActive(await getSession(list[0].id));
           } else {
-            setActive(await createSession(active?.agent ?? "ridge"));
+            setActive(await createSession(DEFAULT_AGENT_ID));
             await refreshSummaries();
           }
         }
@@ -537,7 +618,7 @@ export function Harness() {
         const lines: string[] = [
           `# ${session.title}`,
           "",
-          `- Agent: ${agentById(session.agent).name}`,
+          `- Agent: ${resolveAgent(session.agent, state.agents).name}`,
           `- Exported: ${new Date().toLocaleString()}`,
           `- Messages: ${session.messages.length}`,
           "",
@@ -582,7 +663,7 @@ export function Harness() {
         setRunError(errorText(caught));
       }
     },
-    [active],
+    [active, state.agents],
   );
 
   const setAgent = useCallback(
@@ -638,11 +719,9 @@ export function Harness() {
 
   const stop = useCallback(() => {
     const runId = runIdRef.current;
-    if (runId) {
-      void cancelRun(runId).catch(() => abortRef.current?.abort());
-    } else {
-      abortRef.current?.abort();
-    }
+    // Abort locally for an instant UI stop, then tell the server to kill the run.
+    abortRef.current?.abort();
+    if (runId) void cancelRun(runId).catch(() => undefined);
   }, []);
 
   const pickModel = useCallback(
@@ -697,6 +776,10 @@ export function Harness() {
 
   const name = state.profile.name || "friend";
   const subagentCount = lastRun?.subagents?.length ?? 0;
+  // The folder name, not the whole path. The absolute path belongs in
+  // Settings and in the inspector; on the welcome screen it is noise, and it
+  // puts the user's home directory on screen for no reason.
+  const workspaceName = (boot?.workspace ?? "").split(/[\\/]/).filter(Boolean).pop() ?? "";
 
   if (loading) {
     return (
@@ -725,21 +808,42 @@ export function Harness() {
 
   return (
     <div className="relative z-10 flex h-full w-full gap-3 p-3">
-      {sidebar && <div className="a-fade fixed inset-0 z-30 bg-[#06041e]/40 lg:hidden" onClick={() => setSidebar(false)} />}
-      {sidebar && (
-        <aside className="fixed inset-y-3 left-3 z-40 w-[min(300px,88vw)] sm:inset-y-4 sm:left-4 lg:static lg:z-auto lg:w-[290px] lg:inset-auto lg:shrink-0">
-          <Sidebar
-            sessions={summaries}
-            activeId={active?.id ?? ""}
-            onSelect={(id) => void select(id)}
-            onNew={() => void newSession()}
-            onDelete={(id) => void remove(id)}
-            onExport={(id) => void exportSession(id)}
-            onClose={() => setSidebar(false)}
-            onSettings={() => setSettings("profile")}
+      <AnimatePresence initial={false}>
+        {sidebar && (
+          <motion.div
+            key="sidebar-backdrop"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.18 }}
+            className="fixed inset-0 z-30 bg-[#06041e]/40 lg:hidden"
+            onClick={() => setSidebar(false)}
           />
-        </aside>
-      )}
+        )}
+      </AnimatePresence>
+      <AnimatePresence initial={false}>
+        {sidebar && (
+          <motion.aside
+            key="sidebar"
+            initial={{ x: -26, opacity: 0 }}
+            animate={{ x: 0, opacity: 1 }}
+            exit={{ x: -26, opacity: 0 }}
+            transition={spring.smooth}
+            className="fixed inset-y-3 left-3 z-40 w-[min(300px,88vw)] sm:inset-y-4 sm:left-4 lg:static lg:z-auto lg:w-[290px] lg:inset-auto lg:shrink-0"
+          >
+            <Sidebar
+              sessions={summaries}
+              activeId={active?.id ?? ""}
+              onSelect={(id) => void select(id)}
+              onNew={() => void newSession()}
+              onDelete={(id) => void remove(id)}
+              onExport={(id) => void exportSession(id)}
+              onClose={() => setSidebar(false)}
+              onSettings={() => setSettings("general")}
+            />
+          </motion.aside>
+        )}
+      </AnimatePresence>
 
       <main className="relative flex min-w-0 flex-1 flex-col">
         <div className="pointer-events-none absolute inset-x-0 top-0 z-20 flex items-center justify-between gap-2">
@@ -766,12 +870,21 @@ export function Harness() {
               </div>
               <AnimatePresence>
                 {agentMenu && (
-                  <AgentMenu current={active?.agent ?? "ridge"} disabled={running} onPick={(id) => void setAgent(id)} onClose={() => setAgentMenu(false)} />
+                  <AgentMenu current={active?.agent ?? DEFAULT_AGENT_ID} disabled={running} onPick={(id) => void setAgent(id)} onClose={() => setAgentMenu(false)} />
                 )}
               </AnimatePresence>
             </div>
           </div>
           <div className="glass-css pointer-events-auto flex h-11 shrink-0 items-center gap-0.5 rounded-full px-1.5">
+            <button
+              onClick={() => void compactContext()}
+              disabled={compactBusy || running || empty}
+              className="grid h-9 w-9 place-items-center rounded-full transition hover:bg-white/15 disabled:opacity-35"
+              aria-label="Compact context"
+              title="Compact the earlier turns of this session"
+            >
+              {compactBusy ? <Spinner className="h-[18px] w-[18px]" /> : <Minimize2 className="h-[18px] w-[18px]" />}
+            </button>
             <button onClick={() => void exportSession()} className="grid h-9 w-9 place-items-center rounded-full transition hover:bg-white/15" aria-label="Export session" title={exported ? "Exported" : "Export as Markdown"}>
               {exported ? <Check className="h-[18px] w-[18px] text-emerald-300" /> : <Download className="h-[18px] w-[18px]" />}
             </button>
@@ -780,12 +893,21 @@ export function Harness() {
               {subagentCount > 0 && <span className="absolute right-1 top-1 h-1.5 w-1.5 rounded-full" style={{ background: "var(--accent)" }} />}
             </button>
             <button onClick={cycleScene} className="grid h-9 w-9 place-items-center rounded-full transition hover:bg-white/15" aria-label="Change scene" title="Change scene"><Palette className="h-[18px] w-[18px]" /></button>
-            <button onClick={() => setSettings("profile")} className="grid h-9 w-9 place-items-center rounded-full transition hover:bg-white/15" aria-label="Settings" title="Settings"><Settings2 className="h-[18px] w-[18px]" /></button>
+            <button onClick={() => setSettings("general")} className="grid h-9 w-9 place-items-center rounded-full transition hover:bg-white/15" aria-label="Settings" title="Settings"><Settings2 className="h-[18px] w-[18px]" /></button>
           </div>
         </div>
 
-        {empty ? (
-          <div key={"hero" + (active?.id ?? "")} className="flex min-h-0 flex-1 flex-col items-center justify-center px-2 pb-[8vh] pt-16">
+        <div className="relative flex min-h-0 flex-1 flex-col">
+          <AnimatePresence mode="wait" initial={false}>
+            {empty ? (
+              <motion.div
+                key={`hero-${active?.id ?? "none"}`}
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -8 }}
+                transition={{ duration: 0.24, ease }}
+                className="flex min-h-0 flex-1 flex-col items-center justify-center px-2 pb-[8vh] pt-16"
+              >
             <motion.div
               initial={{ opacity: 0, y: 16 }}
               animate={{ opacity: 1, y: 0 }}
@@ -820,14 +942,21 @@ export function Harness() {
                 <button key={e} onClick={() => send(e, [])} className="rounded-full bg-white/[0.07] px-3.5 py-1.5 text-[13px] text-white/70 shadow-[inset_0_0_0_1px_rgba(255,255,255,.12)] transition hover:bg-white/15 hover:text-white">{e}</button>
               ))}
             </div>
-            {boot && (
+            {boot && workspaceName && (
               <p className="mt-7 max-w-[560px] px-4 text-center text-[11.5px] leading-relaxed text-white/45" style={{ textShadow: "0 1px 14px rgba(5,3,22,.85)" }}>
-                Tools act inside <span className="font-mono text-white/60">{boot.workspace}</span>. Commands and file writes ask first in Balanced mode.
+                Tools act inside <span className="font-mono text-white/60">{workspaceName}</span>. Commands and file writes ask first in Balanced mode.
               </p>
             )}
-          </div>
-        ) : (
-          <>
+              </motion.div>
+            ) : (
+              <motion.div
+                key={`chat-${active?.id ?? "none"}`}
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -8 }}
+                transition={{ duration: 0.24, ease }}
+                className="flex min-h-0 flex-1 flex-col"
+              >
             <div ref={scroller} onScroll={(e) => { const el = e.currentTarget; stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 140; }} className="scroll-thin fade-top min-h-0 flex-1 overflow-y-auto">
               <div className="mx-auto max-w-[760px] space-y-9 px-2 pb-8 pt-20 sm:px-4">
                 {active?.messages.map((m) => (
@@ -835,14 +964,31 @@ export function Harness() {
                     key={m.id}
                     msg={m}
                     canRegenerate={!running && m.id === lastRun?.id}
-                    onRegenerate={regenerate}
+                    onRegenerate={!running && m.id === lastRun?.id ? regenerate : undefined}
                     onApprove={approve}
                     approvalBusy={approvalBusy}
+                    onRevertStep={revertToStep}
+                    revertBusy={revertBusy}
                   />
                 ))}
               </div>
             </div>
             <div className="mx-auto w-full max-w-[760px] px-1 pb-1 sm:px-3">
+              <AnimatePresence>
+                {notice && (
+                  <motion.div
+                    variants={pop}
+                    initial="hidden"
+                    animate="show"
+                    exit="exit"
+                    className="mb-2 flex items-center gap-2 rounded-2xl bg-emerald-300/10 px-3.5 py-2.5 text-[12.5px] text-emerald-100 shadow-[inset_0_0_0_1px_rgba(120,255,200,.18)]"
+                  >
+                    <Check className="h-3.5 w-3.5" />
+                    <span className="min-w-0 flex-1 break-words">{notice}</span>
+                    <button onClick={() => setNotice(null)} className="grid h-5 w-5 place-items-center rounded-full hover:bg-white/15" aria-label="Dismiss"><X className="h-3 w-3" /></button>
+                  </motion.div>
+                )}
+              </AnimatePresence>
               <AnimatePresence>
                 {runError && (
                   <motion.div
@@ -863,20 +1009,43 @@ export function Harness() {
                 {model ? `${model.name} via ${providerMeta(model.provider).name} · responses may be inaccurate` : "No model available"}
               </p>
             </div>
-          </>
-        )}
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
       </main>
 
-      {inspector && (
-        <>
-          <div className="a-fade fixed inset-0 z-30 bg-[#06041e]/40 xl:hidden" onClick={() => setInspector(false)} />
-          <aside className="fixed inset-y-3 right-3 z-40 w-[min(340px,92vw)] sm:inset-y-4 sm:right-4 xl:static xl:z-auto xl:w-[320px] xl:inset-auto xl:shrink-0">
-            <Inspector run={lastRun} prompt={lastPrompt} onClose={() => setInspector(false)} />
-          </aside>
-        </>
-      )}
+      <AnimatePresence initial={false}>
+        {inspector && (
+          <motion.div
+            key="inspector-backdrop"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.18 }}
+            className="fixed inset-0 z-30 bg-[#06041e]/40 xl:hidden"
+            onClick={() => setInspector(false)}
+          />
+        )}
+      </AnimatePresence>
+      <AnimatePresence initial={false}>
+        {inspector && (
+          <motion.aside
+            key="inspector"
+            initial={{ x: 30, opacity: 0 }}
+            animate={{ x: 0, opacity: 1 }}
+            exit={{ x: 30, opacity: 0 }}
+            transition={spring.smooth}
+            className="fixed inset-y-3 right-3 z-40 w-[min(340px,92vw)] sm:inset-y-4 sm:right-4 xl:static xl:z-auto xl:w-[320px] xl:inset-auto xl:shrink-0"
+          >
+            <Inspector run={lastRun} prompt={lastPrompt} session={active ?? undefined} onClose={() => setInspector(false)} />
+          </motion.aside>
+        )}
+      </AnimatePresence>
 
-      {settings && <Settings initialTab={settings} onClose={() => setSettings(null)} />}
+      <AnimatePresence>
+        {settings && <Settings key="settings" initialTab={settings} onClose={() => setSettings(null)} />}
+      </AnimatePresence>
 
       <CommandPalette
         open={palette}

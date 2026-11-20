@@ -100,7 +100,7 @@ export function shellTools(root: string): ToolDefinition[] {
       spec: {
         name: "run_command",
         description:
-          "Run a shell command in the workspace (PowerShell on Windows, bash elsewhere). Use it to inspect projects, run tests, or execute code. Commands need approval unless autonomy is set to auto.",
+          "Run a shell command in the workspace (PowerShell on Windows, bash elsewhere). Use it to inspect projects, run tests or execute code. Commands need approval unless autonomy is auto.",
         parameters: {
           type: "object",
           properties: {
@@ -141,15 +141,22 @@ export function shellTools(root: string): ToolDefinition[] {
         let stdout = "";
         let stderr = "";
         let truncated = false;
+        const MAX_STREAM = 30_000;
+        const MAX_LINES = 500;
         const append = (target: "out" | "err", chunk: Buffer): void => {
           const text = chunk.toString("utf8");
-          if (target === "out") {
-            if (stdout.length + text.length > 30_000) truncated = true;
-            stdout = (stdout + text).slice(0, 30_000);
-          } else {
-            if (stderr.length + text.length > 30_000) truncated = true;
-            stderr = (stderr + text).slice(0, 30_000);
+          let next = (target === "out" ? stdout : stderr) + text;
+          if (next.length > MAX_STREAM) {
+            next = next.slice(0, MAX_STREAM);
+            truncated = true;
           }
+          const lines = next.split("\n");
+          if (lines.length > MAX_LINES) {
+            next = lines.slice(0, MAX_LINES).join("\n");
+            truncated = true;
+          }
+          if (target === "out") stdout = next;
+          else stderr = next;
         };
         child.stdout?.on("data", (chunk: Buffer) => append("out", chunk));
         child.stderr?.on("data", (chunk: Buffer) => append("err", chunk));

@@ -12,6 +12,8 @@ export interface WallpaperSettings {
   blur: number;
   /** 0-80 percent scrim */
   dim: number;
+  /** How a custom image fills the window. */
+  fit: "cover" | "contain";
   parallax: boolean;
 }
 
@@ -22,6 +24,7 @@ export const DEFAULT_WALLPAPER: WallpaperSettings = {
   opacity: 100,
   blur: 0,
   dim: 14,
+  fit: "cover",
   parallax: true,
 };
 

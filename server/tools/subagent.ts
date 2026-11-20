@@ -26,7 +26,7 @@ export function spawnSubagentTool(): ToolDefinition {
     spec: {
       name: "spawn_subagent",
       description:
-        "Delegate a self-contained task to an isolated specialist sub-agent. Use it for hard research, coding, analysis or drafting that benefits from a focused context. The sub-agent has its own tool budget and returns a summary you can build on.",
+        "Delegate a self-contained task to an isolated specialist. Use it for substantial research, coding, analysis or drafting. It cannot see this conversation, so the instruction must stand alone.",
       parameters: {
         type: "object",
         properties: {
@@ -38,11 +38,11 @@ export function spawnSubagentTool(): ToolDefinition {
           title: { type: "string", description: "Short task title shown to the user." },
           instruction: {
             type: "string",
-            description: "Complete, self-contained instructions. The sub-agent cannot see this conversation.",
+            description: "Complete, self-contained instructions.",
           },
           context: {
             type: "string",
-            description: "Optional background the sub-agent needs (existing findings, file paths, constraints).",
+            description: "Optional background: findings, file paths, constraints.",
           },
         },
         required: ["type", "title", "instruction"],

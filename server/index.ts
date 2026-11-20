@@ -1,4 +1,6 @@
-import { randomBytes, randomUUID } from "node:crypto";
+#!/usr/bin/env node
+import "./quiet.ts";
+import { randomUUID } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -12,12 +14,15 @@ import {
   type RunRequest,
 } from "../shared/protocol.ts";
 import { runAgent, resolveModel } from "./agent/loop.ts";
+import { planContext } from "./agent/compaction.ts";
+import { DEFAULT_AGENT_ID } from "../shared/agents.ts";
 import { loopbackOnly, tokenAuth } from "./auth.ts";
 import { ConfigStore } from "./config.ts";
 import { Db } from "./db.ts";
 import { testProvider } from "./llm/index.ts";
-
-const VERSION = "1.0.0";
+import { McpManager } from "./mcp/manager.ts";
+import { resolveInWorkspace } from "./tools/paths.ts";
+import { VERSION } from "./version.ts";
 
 interface PendingApproval {
   resolve: (approved: boolean) => void;
@@ -65,6 +70,15 @@ const providerTestSchema = z.object({
 const sessionCreateSchema = z.object({ agent: z.string().max(40).optional() });
 const sessionPatchSchema = z.object({ title: z.string().max(200).optional(), agent: z.string().max(40).optional() });
 
+const mcpServerSchema = z.object({
+  id: z.string().max(60).optional(),
+  name: z.string().max(80).optional(),
+  command: z.string().min(1).max(400),
+  args: z.array(z.string().max(400)).max(40).optional(),
+  env: z.record(z.string().max(200), z.string().max(2000)).optional(),
+  enabled: z.boolean().optional(),
+});
+
 const settingsSchema = z.object({
   search: z
     .object({
@@ -85,6 +99,8 @@ const settingsSchema = z.object({
     })
     .optional(),
   autonomy: z.enum(["ask", "balanced", "auto"]).optional(),
+  onboarded: z.boolean().optional(),
+  ui: z.record(z.string(), z.unknown()).optional(),
 });
 
 const runSchema = z.object({
@@ -92,7 +108,8 @@ const runSchema = z.object({
   text: z.string().default(""),
   full: z.string().default(""),
   files: z.array(z.string()).default([]),
-  agentId: z.string().default("ridge"),
+  agentId: z.string().max(40).default(DEFAULT_AGENT_ID),
+  agentName: z.string().max(40).optional(),
   modelKey: z.string().default(""),
   tools: z.object({
     web: z.boolean(),
@@ -118,6 +135,13 @@ function fail(message: string, status = 400) {
   });
 }
 
+const slugify = (value: string): string =>
+  value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 40) || "server";
+
 export function createApp(options: ServerOptions): { app: Hono; config: ConfigStore; db: Db } {
   const config = new ConfigStore({ dataDir: options.dataDir, workspace: options.workspace });
   if (options.defaultModel) config.setDefaultModel(options.defaultModel, false);
@@ -125,6 +149,7 @@ export function createApp(options: ServerOptions): { app: Hono; config: ConfigSt
   const app = new Hono();
   const activeRuns = new Map<string, ActiveRun>();
   const sessionRuns = new Map<string, string>();
+  const mcp = new McpManager(() => config.mcpServers());
 
   app.use("*", loopbackOnly());
   app.get("/health", (c) => c.json({ ok: true, version: VERSION }));
@@ -149,6 +174,10 @@ export function createApp(options: ServerOptions): { app: Hono; config: ConfigSt
       },
       memoryCount: db.memoryCount(),
       tokenRequired: !options.noAuth,
+      // The server owns the onboarding flag, so the wizard does not come back
+      // when the browser lands on a different origin.
+      onboarded: config.config.onboarded,
+      ui: config.config.ui ?? null,
     });
   });
 
@@ -158,7 +187,7 @@ export function createApp(options: ServerOptions): { app: Hono; config: ConfigSt
 
   app.post("/api/sessions", async (c) => {
     const body = sessionCreateSchema.safeParse(await c.req.json().catch(() => ({})));
-    const session = db.createSession(body.success ? body.data.agent : "ridge");
+    const session = db.createSession(body.success && body.data.agent ? body.data.agent : DEFAULT_AGENT_ID);
     return c.json({ session });
   });
 
@@ -184,9 +213,161 @@ export function createApp(options: ServerOptions): { app: Hono; config: ConfigSt
     return c.json({ ok: true });
   });
 
+  /* ───────────── snapshots & compaction ───────────── */
+
+  /**
+   * Undo the file changes made by one step. Every file is checked against the
+   * content the step produced: if anything changed since, nothing is written
+   * and the conflicting paths come back to the client.
+   */
+  app.post("/api/sessions/:id/steps/:stepId/revert", (c) => {
+    const sessionId = c.req.param("id");
+    const stepId = c.req.param("stepId");
+    const snapshots = db.listFileSnapshots(sessionId, stepId);
+    if (!snapshots.length) return fail("There is no file snapshot for that step.", 404);
+
+    const conflicts: { path: string; reason: string }[] = [];
+    const prepared: { path: string; absolute: string; before: string; beforeMissing: boolean }[] = [];
+    // One step can touch the same file more than once. The expected content is
+    // the result of the last change; the restored content is the state before
+    // the first change.
+    const grouped = new Map<string, typeof snapshots>();
+    for (const snapshot of snapshots) {
+      const list = grouped.get(snapshot.path) ?? [];
+      list.push(snapshot);
+      grouped.set(snapshot.path, list);
+    }
+    for (const [filePath, list] of grouped) {
+      const first = list[0];
+      const last = list[list.length - 1];
+      let absolute: string;
+      try {
+        absolute = resolveInWorkspace(config.workspace, filePath);
+      } catch {
+        conflicts.push({ path: filePath, reason: "the path is outside the workspace" });
+        continue;
+      }
+      let current: string | null = null;
+      try {
+        current = fs.existsSync(absolute) ? fs.readFileSync(absolute, "utf8") : null;
+      } catch {
+        current = null;
+      }
+      if (current !== last.after) {
+        conflicts.push({
+          path: filePath,
+          reason: current === null ? "the file was removed" : "the file changed after this step",
+        });
+        continue;
+      }
+      prepared.push({
+        path: filePath,
+        absolute,
+        before: first.before,
+        beforeMissing: Boolean(first.before_missing),
+      });
+    }
+
+    if (conflicts.length) {
+      return c.json(
+        {
+          error: "Some files changed after this step, so nothing was reverted.",
+          conflicts,
+        },
+        409,
+      );
+    }
+
+    const reverted: string[] = [];
+    for (const item of prepared) {
+      try {
+        if (item.beforeMissing) {
+          if (fs.existsSync(item.absolute)) fs.unlinkSync(item.absolute);
+        } else {
+          fs.mkdirSync(path.dirname(item.absolute), { recursive: true });
+          fs.writeFileSync(item.absolute, item.before, "utf8");
+        }
+        reverted.push(item.path);
+      } catch (error) {
+        return fail(
+          `Could not revert ${item.path}: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
+    }
+    return c.json({ ok: true, reverted });
+  });
+
+  /** Compact the stored transcript into a digest so later runs stay small. */
+  app.post("/api/sessions/:id/compact", (c) => {
+    const session = db.getSession(c.req.param("id"));
+    if (!session) return fail("Session not found.", 404);
+    const plan = planContext({
+      db,
+      sessionId: session.id,
+      sessionMessages: session.messages,
+      system: "",
+      force: true,
+      keepRecent: 2,
+    });
+    if (!plan.compacted) {
+      return fail("There is not enough conversation yet to compact.");
+    }
+    return c.json({
+      ok: true,
+      compactedMessages: plan.olderMessages,
+      savedTokens: plan.savedTokens,
+      digest: plan.digest,
+    });
+  });
+
+  /* ───────────── MCP servers ───────────── */
+
+  app.get("/api/mcp/servers", (c) => c.json({ servers: mcp.list() }));
+
+  app.post("/api/mcp/servers", async (c) => {
+    const body = mcpServerSchema.safeParse(await c.req.json().catch(() => ({})));
+    if (!body.success) return fail("Invalid MCP server settings.");
+    const command = body.data.command.trim();
+    if (!command) return fail("An MCP server needs a command.");
+    const id = (body.data.id ?? "").trim() || slugify(body.data.name ?? command);
+    const server = {
+      id,
+      name: (body.data.name ?? "").trim() || command,
+      command,
+      args: body.data.args ?? [],
+      env: body.data.env ?? {},
+      enabled: body.data.enabled ?? true,
+    };
+    config.upsertMcpServer(server);
+    await mcp.disconnect(id);
+    return c.json({ ok: true, servers: mcp.list() });
+  });
+
+  app.delete("/api/mcp/servers/:id", async (c) => {
+    const id = c.req.param("id");
+    await mcp.disconnect(id);
+    config.removeMcpServer(id);
+    return c.json({ ok: true, servers: mcp.list() });
+  });
+
+  app.post("/api/mcp/servers/:id/verify", async (c) => {
+    const id = c.req.param("id");
+    try {
+      const status = await mcp.connect(id);
+      return c.json({ ok: status.connected, server: status, servers: mcp.list() });
+    } catch (error) {
+      return fail(error instanceof Error ? error.message : String(error));
+    }
+  });
+
   /* ───────────── memory ───────────── */
 
-  app.get("/api/memory", (c) => c.json({ memories: db.listMemories(200) }));
+  app.get("/api/memory", (c) => {
+    const query = (c.req.query("q") ?? "").trim();
+    return c.json({
+      memories: query ? db.searchMemories(query, 200) : db.listMemories(200),
+    });
+  });
 
   app.delete("/api/memory/:id", (c) => {
     db.deleteMemory(c.req.param("id"));
@@ -204,7 +385,7 @@ export function createApp(options: ServerOptions): { app: Hono; config: ConfigSt
     return c.json({ ok: true, provider: config.providerView(id) });
   });
 
-  app.post("/api/providers/:id/test", async (c) => {
+  app.post("/api/providers/:id/verify", async (c) => {
     const id = c.req.param("id");
     if (!isProviderId(id)) return fail("Unknown provider.", 404);
     const body = providerTestSchema.safeParse(await c.req.json().catch(() => ({})));
@@ -243,6 +424,8 @@ export function createApp(options: ServerOptions): { app: Hono; config: ConfigSt
     if (body.data.tools) config.setTools(body.data.tools);
     if (body.data.autonomy) config.setAutonomy(body.data.autonomy);
     if (body.data.search) config.updateSearch(body.data.search);
+    if (body.data.onboarded !== undefined) config.setOnboarded(body.data.onboarded);
+    if (body.data.ui) config.setUi(body.data.ui);
     if (body.data.defaultModel !== undefined) {
       if (!config.availableModels().some((model) => model.key === body.data.defaultModel)) {
         return fail("That model is not available. Connect its provider first.");
@@ -255,6 +438,7 @@ export function createApp(options: ServerOptions): { app: Hono; config: ConfigSt
       tools: config.config.tools,
       autonomy: config.config.autonomy,
       defaultModel: config.resolvedDefaultModel(),
+      onboarded: config.config.onboarded,
       search: {
         tavily: Boolean(config.config.search.tavilyKey),
         brave: Boolean(config.config.search.braveKey),
@@ -350,6 +534,7 @@ export function createApp(options: ServerOptions): { app: Hono; config: ConfigSt
           session,
           emit: write,
           requestApproval,
+          mcp,
         })
           .catch((error) => {
             write({
@@ -452,10 +637,42 @@ export async function startServer(options: ServerOptions): Promise<RunningServer
   };
 }
 
-const isMain = process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);
-if (isMain) {
-  const token = `hsk_${randomBytes(24).toString("base64url")}`;
-  const running = await startServer({ token, port: 8787, workspace: process.cwd() });
-  console.log(`Hikes API listening on http://127.0.0.1:${running.port}`);
-  console.log(`Token: ${token}`);
+/**
+ * Running this file directly launches the whole harness: API, UI and
+ * browser. The launcher lives inside the server so there is no separate
+ * wrapper script to keep in sync, and the `hikes` command on your PATH
+ * points straight at this file.
+ */
+const modulePath = fileURLToPath(import.meta.url);
+const invokedPath = process.argv[1] ? path.resolve(process.argv[1]) : "";
+
+/**
+ * True when both paths point at the same file.
+ *
+ * `npm link` runs the entry point through a symlink, so `argv[1]` and
+ * `import.meta.url` can be different strings for the same file. Resolving
+ * both handles that.
+ */
+function isSameFile(left: string, right: string): boolean {
+  if (!left || !right) return false;
+  const resolve = (value: string) => {
+    try {
+      return fs.realpathSync.native(value);
+    } catch {
+      return value;
+    }
+  };
+  const a = resolve(left);
+  const b = resolve(right);
+  if (a === b) return true;
+  return process.platform === "win32" && a.toLowerCase() === b.toLowerCase();
+}
+
+if (isSameFile(invokedPath, modulePath)) {
+  const { runLauncher } = await import("./launcher.ts");
+  await runLauncher({
+    start: startServer,
+    root: path.resolve(path.dirname(modulePath), ".."),
+    argv: process.argv.slice(2),
+  });
 }

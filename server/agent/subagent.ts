@@ -16,6 +16,7 @@ import type { ConfigStore } from "../config.ts";
 import type { Db } from "../db.ts";
 import { streamModel } from "../llm/index.ts";
 import type { AgentMessage, ToolCall } from "../llm/types.ts";
+import { HIKES_SUBAGENT_IDENTITY } from "./identity.ts";
 import {
   buildToolRegistry,
   describeToolCall,
@@ -37,8 +38,9 @@ const isAbort = (error: unknown): boolean =>
 function subagentSystem(task: SubAgentTask, workspace: string): string {
   const def = subagentById(task.type);
   return [
-    `You are ${def.name}, a focused sub-agent inside Hikes, a local agent harness.`,
-    def.prompt,
+    HIKES_SUBAGENT_IDENTITY,
+    "",
+    `You are the ${def.name} sub-agent. ${def.prompt}`,
     "",
     `Workspace: ${workspace}`,
     `Current date: ${new Date().toDateString()}.`,

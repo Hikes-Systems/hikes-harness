@@ -26,7 +26,7 @@ const LAYERS: LayerCfg[] = [
 const W = 1600;
 const H = 400;
 
-function ridge(cfg: LayerCfg) {
+function mountainPath(cfg: LayerCfg) {
   const rnd = mulberry32(cfg.seed);
   const lattices = Array.from({ length: cfg.oct }, (_, o) => {
     const n = cfg.freq * 2 ** o;
@@ -64,12 +64,86 @@ function stars(n: number, seed: number) {
   return Array.from({ length: n }, () => `${(r() * 100).toFixed(1)}vw ${(r() * 52).toFixed(1)}vh 0 0 rgba(255,255,255,${(0.5 + r() * 0.5).toFixed(2)})`).join(",");
 }
 
-function SceneImpl({ motion }: { motion: boolean }) {
-  const paths = useMemo(() => LAYERS.map(ridge), []);
+/**
+ * Pause the scene while the tab is in the background, and ease it back up when
+ * the user comes back.
+ *
+ * The browser already stops painting a hidden tab, but the scene snaps back to
+ * full speed the moment the tab is visible again. Ramping the playback rate
+ * from a crawl to normal over a second and a half makes the return deliberate
+ * instead of jarring.
+ */
+function useTabVisibility(animate: boolean) {
+  useEffect(() => {
+    if (!animate) return;
+    const root = document.documentElement;
+    const sceneAnimations = () =>
+      document.getAnimations().filter((animation) => {
+        const target = (animation.effect as KeyframeEffect | null)?.target;
+        return target instanceof Element && target.closest(".sky") !== null;
+      });
+
+    let frame = 0;
+    const ramp = () => {
+      const animations = sceneAnimations();
+      if (!animations.length) return;
+      const slowest = 0.08;
+      const duration = 1500;
+      const start = performance.now();
+      const step = (now: number) => {
+        const t = Math.min(1, (now - start) / duration);
+        // Smoothstep: the scene crawls for a moment, then settles into speed.
+        const eased = t * t * (3 - 2 * t);
+        const rate = slowest + (1 - slowest) * eased;
+        for (const animation of animations) animation.playbackRate = rate;
+        if (t < 1) {
+          frame = requestAnimationFrame(step);
+        } else {
+          for (const animation of animations) animation.playbackRate = 1;
+        }
+      };
+      for (const animation of animations) animation.playbackRate = slowest;
+      frame = requestAnimationFrame(step);
+    };
+
+    const onVisibility = () => {
+      if (document.visibilityState === "hidden") {
+        root.dataset.tab = "hidden";
+        cancelAnimationFrame(frame);
+        return;
+      }
+      root.dataset.tab = "visible";
+      ramp();
+    };
+
+    root.dataset.tab = document.visibilityState === "hidden" ? "hidden" : "visible";
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisibility);
+      cancelAnimationFrame(frame);
+      for (const animation of sceneAnimations()) animation.playbackRate = 1;
+      delete root.dataset.tab;
+    };
+  }, [animate]);
+}
+
+function SceneImpl({
+  motion,
+  animateLayers,
+  variant = "live",
+}: {
+  motion: boolean;
+  /** Whether the CSS layers animate. The rim copy animates without the pointer parallax. */
+  animateLayers: boolean;
+  variant?: "live" | "rim";
+}) {
+  const paths = useMemo(() => LAYERS.map(mountainPath), []);
   const starsA = useMemo(() => stars(46, 5), []);
   const starsB = useMemo(() => stars(64, 9), []);
   const parRefs = useRef<(HTMLDivElement | null)[]>([]);
   const sunRef = useRef<HTMLDivElement | null>(null);
+
+  useTabVisibility(animateLayers);
 
   useEffect(() => {
     if (!motion) return;
@@ -94,28 +168,28 @@ function SceneImpl({ motion }: { motion: boolean }) {
   }, [motion]);
 
   return (
-    <div aria-hidden data-motion={motion ? "on" : "off"} className="pointer-events-none fixed inset-0 overflow-hidden sky">
+    <div aria-hidden data-motion={animateLayers ? "on" : "off"} data-scene={variant} className="pointer-events-none fixed inset-0 overflow-hidden sky">
       {/* stars */}
       <div className="absolute left-0 top-0 h-[55%] w-full">
-        <div className="stars-a scene-anim" style={{ boxShadow: starsA }} />
-        <div className="stars-b scene-anim" style={{ boxShadow: starsB }} />
+        <div data-sync className="stars-a scene-anim" style={{ boxShadow: starsA }} />
+        <div data-sync className="stars-b scene-anim" style={{ boxShadow: starsB }} />
       </div>
 
       {/* aurora */}
       <div className="absolute inset-x-[-10%] top-[2%] h-[55%]">
-        <div className="aurora-band scene-anim absolute inset-0" style={{
+        <div data-sync className="aurora-band scene-anim absolute inset-0" style={{
           background: "radial-gradient(ellipse 38% 46% at 28% 42%, var(--au1), transparent 70%), radial-gradient(ellipse 30% 40% at 68% 30%, var(--au2), transparent 70%)",
           animation: "aurora-a 22s ease-in-out infinite alternate",
         }} />
-        <div className="aurora-band scene-anim absolute inset-0" style={{
+        <div data-sync className="aurora-band scene-anim absolute inset-0" style={{
           background: "radial-gradient(ellipse 34% 36% at 52% 52%, var(--au1), transparent 70%), radial-gradient(ellipse 26% 42% at 84% 44%, var(--au2), transparent 70%)",
           animation: "aurora-b 28s ease-in-out infinite alternate", opacity: "calc(var(--aurora) * .7)",
         }} />
       </div>
 
       {/* sun / moon */}
-      <div ref={sunRef} className="absolute left-[60%] bottom-[33%] aspect-square w-[min(30vw,380px)] -translate-x-1/2" style={{ willChange: "transform" }}>
-        <div className="scene-anim h-full w-full" style={{ animation: "sun-float 140s ease-in-out infinite alternate", willChange: "transform" }}>
+      <div ref={sunRef} data-sync data-parallax className="absolute left-[60%] bottom-[33%] aspect-square w-[min(30vw,380px)] -translate-x-1/2" style={{ willChange: "transform" }}>
+        <div data-sync className="scene-anim h-full w-full" style={{ animation: "sun-float 140s ease-in-out infinite alternate", willChange: "transform" }}>
           <div className="sun-glow absolute left-1/2 top-1/2 aspect-square w-[320%] -translate-x-1/2 -translate-y-1/2" />
           <div className="sun-core absolute inset-[18%] rounded-full" />
         </div>
@@ -124,8 +198,8 @@ function SceneImpl({ motion }: { motion: boolean }) {
       {/* mountain layers */}
       {LAYERS.map((cfg, i) => (
         <div key={i} className="absolute" style={{ left: -70, right: -70, bottom: "-1vh", height: `${cfg.h}vh` }}>
-          <div ref={(el) => { parRefs.current[i] = el; }} className="absolute inset-0" style={{ willChange: "transform" }}>
-            <div className="scroll-layer absolute left-0 top-0 h-full w-[200%]" style={{ ["--dur" as string]: `${cfg.dur}s` }}>
+          <div ref={(el) => { parRefs.current[i] = el; }} data-sync data-parallax className="absolute inset-0" style={{ willChange: "transform" }}>
+            <div data-sync className="scroll-layer absolute left-0 top-0 h-full w-[200%]" style={{ ["--dur" as string]: `${cfg.dur}s` }}>
               <svg className="h-full w-full" viewBox={`0 0 ${W * 2} ${H}`} preserveAspectRatio="none">
                 <defs>
                   <linearGradient id={`mg${i}`} x1="0" y1="0" x2="0" y2="1">
@@ -144,8 +218,8 @@ function SceneImpl({ motion }: { motion: boolean }) {
             </div>
           </div>
           {/* mist drifting in front of each layer except the last */}
-          {i < 4 && (
-            <div className="scene-anim absolute left-[-20%] w-[140%]" style={{
+          {i < 3 && (
+            <div data-sync className="scene-anim absolute left-[-20%] w-[140%]" style={{
               bottom: "6%", height: "46%", willChange: "transform",
               background: "radial-gradient(ellipse 50% 50% at 50% 60%, color-mix(in oklab, var(--fog) 34%, transparent), transparent 72%)",
               animation: `mist ${44 + i * 9}s ease-in-out ${-i * 11}s infinite alternate`,

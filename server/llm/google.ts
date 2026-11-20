@@ -14,7 +14,11 @@ interface GeminiPart {
 
 interface GeminiChunk {
   candidates?: Array<{ content?: { parts?: GeminiPart[] } }>;
-  usageMetadata?: { promptTokenCount?: number; candidatesTokenCount?: number };
+  usageMetadata?: {
+    promptTokenCount?: number;
+    candidatesTokenCount?: number;
+    cachedContentTokenCount?: number;
+  };
   error?: { message?: string };
 }
 
@@ -42,22 +46,33 @@ function toGeminiSchema(value: unknown): unknown {
   return out;
 }
 
+/**
+ * Convert the internal message list to Gemini's format.
+ *
+ * Consecutive user turns are merged into one entry. This happens in practice
+ * when a compaction digest (a user message) is followed by a user turn, and
+ * when a tool result is followed by an instruction.
+ */
 function toGeminiContents(messages: AgentMessage[]): Record<string, unknown>[] {
   const out: Record<string, unknown>[] = [];
+
+  const pushUser = (part: Record<string, unknown>): void => {
+    const last = out[out.length - 1];
+    if (last && last.role === "user" && Array.isArray(last.parts)) {
+      (last.parts as unknown[]).push(part);
+      return;
+    }
+    out.push({ role: "user", parts: [part] });
+  };
+
   for (const message of messages) {
     if (message.role === "tool") {
-      const part = {
+      pushUser({
         functionResponse: {
           name: message.toolName ?? "tool",
           response: { result: message.content },
         },
-      };
-      const last = out[out.length - 1];
-      if (last && last.role === "user" && Array.isArray(last.parts)) {
-        (last.parts as unknown[]).push(part);
-      } else {
-        out.push({ role: "user", parts: [part] });
-      }
+      });
       continue;
     }
     if (message.role === "assistant") {
@@ -69,7 +84,7 @@ function toGeminiContents(messages: AgentMessage[]): Record<string, unknown>[] {
       if (parts.length) out.push({ role: "model", parts });
       continue;
     }
-    out.push({ role: "user", parts: [{ text: message.content }] });
+    pushUser({ text: message.content });
   }
   return out;
 }
@@ -107,6 +122,7 @@ export async function* streamGoogle(req: LLMRequest): AsyncGenerator<ModelEvent>
   let callIndex = 0;
   let inputTokens: number | undefined;
   let outputTokens: number | undefined;
+  let cachedTokens: number | undefined;
 
   for await (const data of sseEvents(res)) {
     let chunk: GeminiChunk;
@@ -134,11 +150,12 @@ export async function* streamGoogle(req: LLMRequest): AsyncGenerator<ModelEvent>
     if (chunk.usageMetadata) {
       inputTokens = chunk.usageMetadata.promptTokenCount ?? inputTokens;
       outputTokens = chunk.usageMetadata.candidatesTokenCount ?? outputTokens;
+      cachedTokens = chunk.usageMetadata.cachedContentTokenCount ?? cachedTokens;
     }
   }
 
   if (inputTokens !== undefined || outputTokens !== undefined) {
-    yield { type: "usage", inputTokens, outputTokens };
+    yield { type: "usage", inputTokens, outputTokens, cachedTokens };
   }
   yield { type: "done" };
 }
