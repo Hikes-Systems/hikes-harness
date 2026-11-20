@@ -22,7 +22,10 @@ test("relative paths resolve inside the workspace", () => {
 test("a path cannot escape the workspace", () => {
   assert.throws(() => resolveInWorkspace(root, "../outside.txt"), /outside the workspace/i);
   assert.throws(() => resolveInWorkspace(root, "src/../../outside.txt"), /outside the workspace/i);
-  assert.throws(() => resolveInWorkspace(root, os.tmpdir()), /outside the workspace/i);
+  assert.throws(
+    () => resolveInWorkspace(root, path.relative(root, os.tmpdir())),
+    /outside the workspace/i,
+  );
 });
 
 test("symlinks that point outside the workspace are refused", () => {
