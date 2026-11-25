@@ -33,13 +33,13 @@ test("onboarding survives a restart and a different launch directory", () => {
   const box = sandbox();
   const first = new ConfigStore({ dataDir: box.dataDir, workspace: box.workspace });
   first.setOnboarded(true);
-  first.setUi({ scene: "ember", motion: false });
+  first.setUi({ theme: "ink", motion: false });
 
   // A second launch is a new process, possibly from another directory and on
   // another port. It must still see the completed setup.
   const second = new ConfigStore({ dataDir: box.dataDir, workspace: box.workspace });
   assert.equal(second.config.onboarded, true);
-  assert.equal(second.config.ui?.scene, "ember");
+  assert.equal(second.config.ui?.theme, "ink");
   fs.rmSync(box.dir, { recursive: true, force: true });
 });
 

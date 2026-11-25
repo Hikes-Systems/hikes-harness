@@ -1,5 +1,6 @@
 import {
   failure,
+  fetchWithRetry,
   parseJson,
   sseEvents,
   trimSlash,
@@ -129,16 +130,19 @@ export async function* streamAnthropic(req: LLMRequest): AsyncGenerator<ModelEve
     }));
   }
 
-  const res = await fetch(`${base}/v1/messages`, {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-      "x-api-key": req.provider.apiKey,
-      "anthropic-version": "2023-06-01",
+  const res = await fetchWithRetry(
+    `${base}/v1/messages`,
+    {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-api-key": req.provider.apiKey,
+        "anthropic-version": "2023-06-01",
+      },
+      body: JSON.stringify(body),
     },
-    body: JSON.stringify(body),
-    signal: req.signal,
-  });
+    { signal: req.signal },
+  );
   if (!res.ok) await failure(res);
 
   const blocks = new Map<number, { id: string; name: string; json: string }>();

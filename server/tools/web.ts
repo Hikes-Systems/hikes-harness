@@ -135,12 +135,21 @@ export async function assertPublicUrl(raw: string): Promise<URL> {
   return url;
 }
 
+/**
+ * The caller's cancellation and a hard ceiling, so a site that accepts the
+ * connection and then says nothing cannot hold a run open forever.
+ */
+function withCeiling(signal: AbortSignal, ms: number): AbortSignal {
+  const ceiling = AbortSignal.timeout(ms);
+  return typeof AbortSignal.any === "function" ? AbortSignal.any([signal, ceiling]) : signal;
+}
+
 async function fetchPublic(raw: string, signal: AbortSignal): Promise<Response> {
   let url = await assertPublicUrl(raw);
   for (let hop = 0; hop < 4; hop++) {
     const res = await fetch(url, {
       redirect: "manual",
-      signal,
+      signal: withCeiling(signal, 20_000),
       headers: {
         "user-agent": "HikesHarness/1.0 (local agent; +https://localhost)",
         accept: "text/html,application/xhtml+xml,text/plain,application/json,application/xml;q=0.9,*/*;q=0.5",
@@ -232,7 +241,7 @@ async function tavilySearch(query: string, limit: number, key: string, signal: A
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ api_key: key, query, max_results: limit, search_depth: "basic", include_answer: false }),
-    signal,
+    signal: withCeiling(signal, 15_000),
   });
   if (!res.ok) throw new Error(`Tavily replied ${res.status}.`);
   const json = (await res.json()) as { results?: Array<{ title?: string; url?: string; content?: string }> };
@@ -245,7 +254,7 @@ async function braveSearch(query: string, limit: number, key: string, signal: Ab
   const url = `https://api.search.brave.com/res/v1/web/search?q=${encodeURIComponent(query)}&count=${limit}`;
   const res = await fetch(url, {
     headers: { accept: "application/json", "x-subscription-token": key },
-    signal,
+    signal: withCeiling(signal, 15_000),
   });
   if (!res.ok) throw new Error(`Brave replied ${res.status}.`);
   const json = (await res.json()) as { web?: { results?: Array<{ title?: string; url?: string; description?: string }> } };

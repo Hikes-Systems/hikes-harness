@@ -25,5 +25,5 @@ function readVersion(): string {
   }
 }
 
-/** The current Hikes version, for example "1.0.1". */
+/** The current Hikes version, for example "1.0.2". */
 export const VERSION: string = readVersion();

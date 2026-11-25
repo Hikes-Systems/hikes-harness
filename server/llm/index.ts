@@ -9,7 +9,7 @@ import type { ProviderConfig } from "../config.ts";
 import { streamAnthropic } from "./anthropic.ts";
 import { streamGoogle } from "./google.ts";
 import { streamOpenAi } from "./openai.ts";
-import { trimSlash, type LLMRequest, type ModelEvent } from "./types.ts";
+import { fetchWithRetry, trimSlash, type LLMRequest, type ModelEvent } from "./types.ts";
 
 export async function* streamModel(req: LLMRequest): AsyncGenerator<ModelEvent> {
   const kind = providerMeta(req.model.provider).kind;
@@ -24,14 +24,12 @@ export async function* streamModel(req: LLMRequest): AsyncGenerator<ModelEvent> 
   yield* streamOpenAi(req);
 }
 
+/**
+ * A connection test, one retry on a transient failure. The API key stays in
+ * the headers only; it is never logged or echoed back.
+ */
 async function timed(url: string, init: RequestInit, ms = 12000): Promise<Response> {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), ms);
-  try {
-    return await fetch(url, { ...init, signal: controller.signal });
-  } finally {
-    clearTimeout(timer);
-  }
+  return fetchWithRetry(url, init, { timeoutMs: ms, retries: 1 });
 }
 
 const keyRejected = (status: number): boolean => status === 401 || status === 403;

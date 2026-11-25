@@ -1,12 +1,10 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { Autonomy, Tone } from "@shared/protocol";
-import { AGENTS, agentById, type AgentIdentity } from "@shared/agents";
-import type { SceneId } from "./lib/scenes";
-import { DEFAULT_WALLPAPER, isWallpaperId, type WallpaperSettings } from "./lib/wallpaper";
-import { defaultIdentities, defaultIdentity, isMascotId } from "./lib/mascots";
 import { saveSettings } from "./lib/api";
+import { DEFAULT_PALETTE, isSessionNav, migrateTheme, paletteInfo, type Palette, type SessionNav } from "./lib/palettes";
 
 export type { Autonomy, Tone } from "@shared/protocol";
+export type { Palette, SessionNav } from "./lib/palettes";
 
 export interface Profile {
   name: string;
@@ -28,12 +26,12 @@ export interface AppState {
   tools: Tools;
   autonomy: Autonomy;
   defaultModel: string;
-  scene: SceneId;
-  quality: "full" | "lite";
+  /** Interface palette: six families, each a light or dark scheme. */
+  theme: Palette;
+  /** Session index placement: docked rail, drop-down panel, or hidden. */
+  sessionNav: SessionNav;
+  /** Interface motion. Off pauses every transition and animation. */
   motion: boolean;
-  wallpaper: WallpaperSettings;
-  /** Per-agent display names and mascots. */
-  agents: Record<string, AgentIdentity>;
   /** Composer defaults to the sequential deep-research pre-pass. */
   researchMode: boolean;
 }
@@ -44,17 +42,13 @@ const initial = (): AppState => ({
   tools: { web: true, code: true, files: true, memory: true },
   autonomy: "balanced",
   defaultModel: "",
-  scene: "dusk",
-  // Lite is the standard. The liquid refraction is parked behind a flag in
-  // src/lib/quality.ts until it is reworked — see the changelog.
-  quality: "lite",
+  theme: DEFAULT_PALETTE,
+  sessionNav: "sidebar",
   motion: true,
-  wallpaper: { ...DEFAULT_WALLPAPER },
-  agents: defaultIdentities(),
   researchMode: false,
 });
 
-const KEY = "hikes:v2";
+const KEY = "hikes:v3";
 /** Written exactly once, when the setup wizard is completed. Never cleared by the app. */
 const SETUP_KEY = "hikes:setup-complete";
 
@@ -63,57 +57,33 @@ const SETUP_KEY = "hikes:setup-complete";
  *
  * They are mirrored to the server so a launch on a different port — a
  * different origin, with an empty browser profile — does not lose the user's
- * wallpaper, agents and profile.
+ * theme, session layout and profile.
  */
-const MIRRORED_FIELDS = [
-  "profile",
-  "scene",
-  "quality",
-  "motion",
-  "wallpaper",
-  "agents",
-  "researchMode",
-] as const;
+const MIRRORED_FIELDS = ["profile", "theme", "sessionNav", "motion", "researchMode"] as const;
 
-/** True when this browser origin has never stored any Hikes state. */
+/** True when this origin already holds state from an earlier visit. */
 function hasLocalState(): boolean {
   try {
-    return localStorage.getItem(KEY) !== null;
+    return localStorage.getItem(KEY) !== null || localStorage.getItem("hikes:v2") !== null;
   } catch {
     return false;
   }
 }
 
+/**
+ * Captured once, before the persistence effect has a chance to write the
+ * untouched initial state. `restore` must not consult localStorage later: by
+ * then every origin looks "local" and the server mirror would never apply.
+ */
+const HAD_LOCAL_AT_BOOT = hasLocalState();
+
 const isAutonomy = (value: unknown): value is Autonomy =>
   value === "ask" || value === "balanced" || value === "auto";
 const isTone = (value: unknown): value is Tone =>
   value === "concise" || value === "balanced" || value === "thorough";
-const isScene = (value: unknown): value is SceneId =>
-  value === "dusk" || value === "aurora" || value === "dawn" || value === "ember";
-
-function mergeAgents(raw: unknown, base: Record<string, AgentIdentity>): Record<string, AgentIdentity> {
-  const source =
-    raw && typeof raw === "object" ? (raw as Record<string, Partial<AgentIdentity>>) : {};
-  const out: Record<string, AgentIdentity> = {};
-  for (const agent of AGENTS) {
-    const fallback = base[agent.id] ?? defaultIdentity(agent.id);
-    const identity = source[agent.id];
-    out[agent.id] = {
-      name:
-        typeof identity?.name === "string" && identity.name.trim()
-          ? identity.name.trim().slice(0, 40)
-          : fallback.name,
-      mascot: isMascotId(identity?.mascot) ? identity.mascot : fallback.mascot,
-    };
-  }
-  return out;
-}
 
 function merge(base: AppState, raw: Partial<AppState>, legacy = false): AppState {
   const profile: Partial<Profile> = raw.profile ?? {};
-  const wallpaper = (raw.wallpaper ?? {}) as Partial<WallpaperSettings>;
-  const num = (value: unknown, fallback: number, min: number, max: number) =>
-    typeof value === "number" && Number.isFinite(value) ? Math.min(max, Math.max(min, value)) : fallback;
   return {
     ...base,
     onboarded: raw.onboarded === undefined ? base.onboarded : Boolean(raw.onboarded),
@@ -131,22 +101,9 @@ function merge(base: AppState, raw: Partial<AppState>, legacy = false): AppState
     },
     autonomy: isAutonomy(raw.autonomy) ? raw.autonomy : base.autonomy,
     defaultModel: typeof raw.defaultModel === "string" && !legacy && !raw.defaultModel.startsWith("demo:") ? raw.defaultModel : base.defaultModel,
-    scene: isScene(raw.scene) ? raw.scene : base.scene,
-    // The liquid refraction is not stable yet, so the stored quality is
-    // ignored and lite is used everywhere.
-    quality: "lite",
+    theme: migrateTheme(raw.theme) ?? base.theme,
+    sessionNav: isSessionNav(raw.sessionNav) ? raw.sessionNav : base.sessionNav,
     motion: typeof raw.motion === "boolean" ? raw.motion : base.motion,
-    wallpaper: {
-      id: isWallpaperId(wallpaper.id) ? wallpaper.id : base.wallpaper.id,
-      image: typeof wallpaper.image === "string" ? wallpaper.image : base.wallpaper.image,
-      color: typeof wallpaper.color === "string" ? wallpaper.color : base.wallpaper.color,
-      opacity: num(wallpaper.opacity, base.wallpaper.opacity, 0, 100),
-      blur: num(wallpaper.blur, base.wallpaper.blur, 0, 40),
-      dim: num(wallpaper.dim, base.wallpaper.dim, 0, 80),
-      fit: wallpaper.fit === "contain" ? "contain" : "cover",
-      parallax: typeof wallpaper.parallax === "boolean" ? wallpaper.parallax : base.wallpaper.parallax,
-    },
-    agents: mergeAgents(raw.agents, base.agents),
     researchMode: typeof raw.researchMode === "boolean" ? raw.researchMode : base.researchMode,
   };
 }
@@ -162,6 +119,14 @@ function load(): AppState {
       if (raw.onboarded && !setupDone) localStorage.setItem(SETUP_KEY, "1");
       return { ...merge(base, raw), onboarded: setupDone || Boolean(raw.onboarded) };
     }
+    // Carry the profile and research preference over from the previous store
+    // version. Old agent identities are intentionally retired.
+    const previous = localStorage.getItem("hikes:v2");
+    if (previous) {
+      const raw = JSON.parse(previous) as Partial<AppState>;
+      if (raw.onboarded && !setupDone) localStorage.setItem(SETUP_KEY, "1");
+      return { ...merge(base, { profile: raw.profile, researchMode: raw.researchMode }), onboarded: setupDone || Boolean(raw.onboarded) };
+    }
     return { ...base, onboarded: setupDone };
   } catch {
     return base;
@@ -173,9 +138,6 @@ interface Ctx {
   set: (patch: Partial<AppState>) => void;
   setProfile: (patch: Partial<Profile>) => void;
   setTools: (patch: Partial<Tools>) => void;
-  /** Rename an agent or choose its mascot. */
-  setAgentIdentity: (id: string, patch: Partial<AgentIdentity>) => void;
-  resetAgentIdentity: (id: string) => void;
   /** Marks onboarding complete permanently for this browser profile. */
   completeSetup: () => void;
   /** Restores the server's mirror of the interface state for a fresh origin. */
@@ -186,6 +148,8 @@ const StoreCtx = createContext<Ctx | null>(null);
 
 export function StoreProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<AppState>(load);
+  /** The server mirror is applied once, not on every bootstrap refresh. */
+  const restored = useRef(false);
 
   useEffect(() => {
     const t = setTimeout(() => {
@@ -198,6 +162,17 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     return () => clearTimeout(t);
   }, [state]);
 
+  // Keep the browser chrome colour in step with the palette.
+  useEffect(() => {
+    const palette = paletteInfo(state.theme);
+    const meta = document.querySelector('meta[name="theme-color"]');
+    meta?.setAttribute("content", palette.chrome);
+    // The page background is painted by `html`, outside the app's themed
+    // subtree, so the attribute has to reach the document element too.
+    document.documentElement.setAttribute("data-theme", state.theme);
+    document.documentElement.setAttribute("data-scheme", palette.scheme);
+  }, [state.theme]);
+
   const set = useCallback((patch: Partial<AppState>) => setState((s) => ({ ...s, ...patch })), []);
   const setProfile = useCallback(
     (patch: Partial<Profile>) => setState((s) => ({ ...s, profile: { ...s.profile, ...patch } })),
@@ -205,36 +180,6 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   );
   const setTools = useCallback(
     (patch: Partial<Tools>) => setState((s) => ({ ...s, tools: { ...s.tools, ...patch } })),
-    [],
-  );
-  const setAgentIdentity = useCallback(
-    (id: string, patch: Partial<AgentIdentity>) =>
-      setState((s) => {
-        const key = agentById(id).id;
-        const current = s.agents[key] ?? defaultIdentity(key);
-        return {
-          ...s,
-          agents: {
-            ...s.agents,
-            [key]: {
-              ...current,
-              ...patch,
-              name:
-                typeof patch.name === "string"
-                  ? patch.name.slice(0, 40)
-                  : current.name,
-            },
-          },
-        };
-      }),
-    [],
-  );
-  const resetAgentIdentity = useCallback(
-    (id: string) =>
-      setState((s) => {
-        const key = agentById(id).id;
-        return { ...s, agents: { ...s.agents, [key]: defaultIdentity(key) } };
-      }),
     [],
   );
   const completeSetup = useCallback(() => {
@@ -252,7 +197,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const restore = useCallback((ui: Record<string, unknown> | null | undefined) => {
     if (!ui) return;
     // Local state always wins: the mirror only fills a gap on a new origin.
-    if (hasLocalState()) return;
+    if (HAD_LOCAL_AT_BOOT || restored.current) return;
+    restored.current = true;
     setState((s) => merge(s, ui as Partial<AppState>));
   }, []);
 
@@ -272,8 +218,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   }, [state]);
 
   const value = useMemo(
-    () => ({ state, set, setProfile, setTools, setAgentIdentity, resetAgentIdentity, completeSetup, restore }),
-    [state, set, setProfile, setTools, setAgentIdentity, resetAgentIdentity, completeSetup, restore],
+    () => ({ state, set, setProfile, setTools, completeSetup, restore }),
+    [state, set, setProfile, setTools, completeSetup, restore],
   );
   return <StoreCtx.Provider value={value}>{children}</StoreCtx.Provider>;
 }

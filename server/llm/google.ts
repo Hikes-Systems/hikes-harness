@@ -1,5 +1,6 @@
 import {
   failure,
+  fetchWithRetry,
   sseEvents,
   trimSlash,
   type AgentMessage,
@@ -111,12 +112,11 @@ export async function* streamGoogle(req: LLMRequest): AsyncGenerator<ModelEvent>
   const url =
     `${base}/v1beta/models/${encodeURIComponent(req.model.id)}:streamGenerateContent` +
     `?alt=sse&key=${encodeURIComponent(req.provider.apiKey)}`;
-  const res = await fetch(url, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(body),
-    signal: req.signal,
-  });
+  const res = await fetchWithRetry(
+    url,
+    { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) },
+    { signal: req.signal },
+  );
   if (!res.ok) await failure(res);
 
   let callIndex = 0;

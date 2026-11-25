@@ -20,6 +20,7 @@ before(async () => {
     token,
     dataDir: path.join(dir, "data"),
     workspace,
+    discoverMcp: false,
     noAuth: false,
   });
   origin = `http://127.0.0.1:${server.port}`;
@@ -54,7 +55,9 @@ async function call(
 test("health is public and reports the running version", async () => {
   const { status, body } = await call("GET", "/health", { auth: false });
   assert.equal(status, 200);
-  assert.deepEqual(body, { ok: true, version: VERSION });
+  assert.equal(body.ok, true);
+  assert.equal(body.version, VERSION);
+  assert.equal(typeof body.uptimeSec, "number");
 });
 
 test("the API refuses a request without the launch token", async () => {
@@ -86,7 +89,7 @@ test("completing onboarding is recorded on the server", async () => {
 
 test("the interface mirror survives a restart on another origin", async () => {
   await call("PUT", "/api/settings", {
-    body: { ui: { scene: "ember", motion: false } },
+    body: { ui: { theme: "ink", motion: false } },
   });
 
   const second = await startServer({
@@ -94,23 +97,34 @@ test("the interface mirror survives a restart on another origin", async () => {
     token,
     dataDir: path.join(dir, "data"),
     workspace: path.join(dir, "workspace"),
+    discoverMcp: false,
     noAuth: false,
   });
   try {
     const response = await fetch(`http://127.0.0.1:${second.port}/api/bootstrap`, {
       headers: { authorization: `Bearer ${token}` },
     });
-    const body = (await response.json()) as { ui?: { scene?: string; motion?: boolean } };
-    assert.equal(body.ui?.scene, "ember");
+    const body = (await response.json()) as { ui?: { theme?: string; motion?: boolean } };
+    assert.equal(body.ui?.theme, "ink");
     assert.equal(body.ui?.motion, false);
   } finally {
     await second.close();
   }
 });
 
+test("the automatic-memory preference round-trips through settings", async () => {
+  const updated = await call("PUT", "/api/settings", { body: { memory: { autoSave: false } } });
+  assert.equal(updated.status, 200);
+  assert.equal(updated.body.memory.autoSave, false);
+  const bootstrap = await call("GET", "/api/bootstrap");
+  assert.equal(bootstrap.body.memory.autoSave, false);
+  await call("PUT", "/api/settings", { body: { memory: { autoSave: true } } });
+});
+
 test("sessions can be created, listed and deleted", async () => {
   const created = await call("POST", "/api/sessions", { body: { agent: "scout" } });
   assert.equal(created.status, 200);
+  assert.equal(created.body.session.agent, "hikes");
   const id = created.body.session.id as string;
 
   const listed = await call("GET", "/api/sessions");

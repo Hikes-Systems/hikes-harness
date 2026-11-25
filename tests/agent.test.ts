@@ -41,11 +41,11 @@ test("every prompt starts with the Hikes identity", () => {
   assert.match(system, /Hikes Systems/);
   assert.match(system, /MIT/);
   assert.match(system, /github\.com\/hikes-systems\/hikes-harness/);
-  assert.match(system, /You are not Hikes/);
-  assert.match(system, /Never write "Hikes \(you\)"/);
+  assert.match(system, /Your name is \*\*Hikes\*\*/);
+  assert.match(system, /main and only primary agent/);
 });
 
-test("the active agent and the user's profile shape the prompt", () => {
+test("legacy agent ids and custom names resolve to the single Hikes identity", () => {
   const system = buildSystemPrompt(
     request({ agentId: "forge", agentName: "Anvil" }),
     model,
@@ -53,7 +53,8 @@ test("the active agent and the user's profile shape the prompt", () => {
     [],
     { canSpawn: false },
   );
-  assert.match(system, /You are the Anvil agent/);
+  assert.match(system, /You are the Hikes agent/);
+  assert.doesNotMatch(system, /Anvil/);
   assert.match(system, /The user's name is Ada and they work as: engineer/);
   assert.match(system, /They want help with: ship it/);
   assert.match(system, /Preferred response style: concise/);

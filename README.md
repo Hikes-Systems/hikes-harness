@@ -31,13 +31,13 @@ git clone https://github.com/hikes-systems/hikes-harness.git
 
 <div align="center">
 
-<img src="docs/showcase/welcome.png" alt="The Hikes welcome screen" width="100%" />
+<img src="docs/showcase/welcome.png" alt="The Hikes Daylight welcome screen with session navigation and quick-start actions" width="100%" />
 
-<sub>The welcome screen. One command, and the agent is ready to work in your folder.</sub>
+<sub>The Daylight welcome screen. Choose a palette, start a session, or jump straight into a workspace task.</sub>
 
-<img src="docs/showcase/chat.png" alt="A conversation with Hikes" width="100%" />
+<img src="docs/showcase/chat.png" alt="A Hikes diff review with assistant output, tool activity and run telemetry" width="100%" />
 
-<sub>A live run. Every step, tool call and token count stays on screen.</sub>
+<sub>A diff review. Assistant output, tool steps, token totals, context usage and the activity timeline stay visible together.</sub>
 
 </div>
 
@@ -48,7 +48,7 @@ git clone https://github.com/hikes-systems/hikes-harness.git
 
 **What it does**
 
-- Four built-in agents with distinct system prompts
+- One primary Hikes agent with automatic personal memory
 - Five delegable sub-agents
 - Eleven built-in tools with risk tiers and approval gates
 - Step-level snapshots, diffs and one-click revert
@@ -57,7 +57,7 @@ git clone https://github.com/hikes-systems/hikes-harness.git
 - SQLite FTS5 memory with hybrid ranking
 - MCP servers over stdio
 - Seven model providers, including fully local ones
-- Four animated scenes, six wallpapers, 16 mascots
+- A six-palette workbench with switchable session navigation and refined controls
 - Single-file production build
 
 </td><td width="50%" valign="top">
@@ -130,17 +130,17 @@ The project is open source and MIT licensed. Issues, ideas and pull requests are
 | --- | --- |
 | **Launch** | One command (`hikes`) starts API + UI + browser. No wrapper scripts, no `.env`, no setup wizard for the setup wizard's sake. |
 | **Providers** | Anthropic, OpenAI, Google Gemini, DeepSeek, OpenRouter, Ollama and any OpenAI-compatible endpoint. Live model discovery with a built-in fallback catalog. |
-| **Agents** | 4 built-ins (`hikes`, `scout`, `forge`, `quill`), each with a distinct system prompt, a customisable name and a Lucide mascot. |
+| **Agent** | One primary Hikes identity for every session, with legacy agent ids safely resolving to Hikes. Specialist sub-agents remain available for delegated work. |
 | **Sub-agents** | 5 specialists (`researcher`, `coder`, `analyst`, `writer`, `planner`) the main agent can delegate to with scoped tool access. |
 | **Tools** | 11 built-ins across web, files, shell and memory, each with a `safe` / `write` / `execute` risk tier. |
 | **Approvals** | Three autonomy modes, per-call approval cards, and a hard block on clearly destructive commands even in autonomous mode. |
 | **Snapshots** | Every file write is snapshotted before it happens. Diffs are shown inline and any step can be reverted. |
 | **Compaction** | The transcript folds itself into a digest once the prompt approaches the model's context window. |
-| **Telemetry** | Token counts and estimated USD cost on every message, plus context usage and session totals in the inspector. |
-| **Memory** | SQLite FTS5 full-text index with BM25 ranking and a substring fallback, exposed through `remember` / `recall` tools and a searchable panel. |
-| **MCP** | Add Model Context Protocol servers over stdio; their tools join the agent as `mcp__<server>__<tool>`. |
+| **Telemetry** | Token counts and estimated USD cost on every message, plus context usage and session totals in the activity ledger. |
+| **Memory** | Automatic durable-fact extraction plus `remember` / `recall` tools, SQLite FTS5 with BM25 ranking, duplicate suppression, secret filtering and a searchable panel. |
+| **MCP** | Automatic discovery of existing local OpenCode configurations, manual stdio servers, single-flight connections and namespaced tools. |
 | **Deep research** | An optional pre-pass that gathers evidence before the model answers, with sources attached to the run. |
-| **Interface** | Liquid-glass React UI, animated parallax scenes, six wallpapers, glass quality and motion toggles, command palette, run inspector. |
+| **Interface** | Six curated light/dark palettes, docked or drop-down session navigation, a clarified conversation layout, and Manrope with IBM Plex Mono. |
 
 ---
 
@@ -152,7 +152,23 @@ The project is open source and MIT licensed. Issues, ideas and pull requests are
 - **npm**
 - **A model provider** — a cloud API key, a local Ollama install, or any OpenAI-compatible endpoint.
 
-### Install
+### Install from npm
+
+Install Hikes globally to use the `hikes` command anywhere:
+
+```bash
+npm install --global @hikesai/web
+hikes
+```
+
+Or install it in a project and run it with `npx`:
+
+```bash
+npm install @hikesai/web
+npx hikes
+```
+
+### Install from source
 
 ```bash
 git clone https://github.com/hikes-systems/hikes-harness.git
@@ -235,22 +251,11 @@ Events on the wire: `run.start`, `step.start`, `step.done`, `text.delta`, `tool.
 
 ## Agents and sub-agents
 
-### Built-in agents
+### The primary agent
 
-Each agent carries a different system prompt, so the same question gets a genuinely different answer.
+**Hikes is the only primary agent.** Every session uses the same practical, resourceful system prompt and Mountain mark. The former Scout, Forge and Quill personas, custom display names and mascot picker have been retired. Existing sessions keep their transcripts; legacy agent ids resolve to Hikes without a database migration.
 
-| Agent | Focus | Default mascot |
-| --- | --- | --- |
-| **Hikes** | All-round assistant — practical, clear, resourceful | Mountain |
-| **Scout** | Research and synthesis — evidence first, citations attached | Compass |
-| **Forge** | Code and debugging — inspect first, minimal correct changes | Hammer |
-| **Quill** | Writing and editing — match your voice, tighten the prose | Feather |
-
-### Custom names and mascots
-
-**Settings → Agent** lets you rename any agent and pick its mascot from 16 Lucide icons — Mountain, Compass, Hammer, Feather, Sparkles, Rocket, Leaf, Flame, Star, Moon, Cloud, Waves, Tent, Map, Bird, Bot. No emoji anywhere in the product.
-
-The chosen name is used in the header, the session list, the composer placeholder, and sent to the model as part of the system prompt. The mascot is the icon shown next to it everywhere.
+Specialist sub-agents are still available behind the scenes for scoped research, coding, analysis, writing and planning. They are delegated helpers, not alternative primary identities.
 
 ### Project instructions
 
@@ -258,11 +263,11 @@ If the workspace contains an `AGENTS.md` or `HIKES.md`, it is read automatically
 
 ### How the agent knows what Hikes is
 
-The default agent is also called *Hikes*, which is confusing enough to be worth handling explicitly. Every run — every new session, every prompt — is sent a product identity block from `server/agent/identity.ts` that tells the model:
+The main agent and the product share the name *Hikes*, which is confusing enough to be worth handling explicitly. Every run — every new session, every prompt — is sent a product identity block from `server/agent/identity.ts` that tells the model:
 
-- **Hikes is the product, not the agent.** You run *inside* the harness; you are not it.
-- Never write "Hikes (you)", "I'm Hikes" or "as Hikes" — refer to the product in the third person as "Hikes", "the Hikes harness" or "the app".
-- When comparing harnesses, Hikes is a **subject being compared**, not the speaker.
+- **Your name is Hikes.** It may answer "I'm Hikes" when asked who it is, and it is the only primary agent.
+- When describing the software rather than itself, use "the Hikes harness" or "the app" to keep the product distinction clear.
+- Specialist sub-agents are internal helpers, not alternative primary personas.
 - What the harness can do — providers, tools, autonomy modes, snapshots and revert, compaction, telemetry, memory, MCP, the agents and sub-agents — so it can answer questions about itself.
 - How to write: match the length to the question, use real Markdown headings, keep paragraphs short, use tables for comparisons, lead with the answer, and do not pad.
 
@@ -391,7 +396,7 @@ You can also compact on demand with the **Minimize2** button in the toolbar.
 
 Every assistant message reports its token usage and an estimated cost in USD, calculated from the model's list price per million input and output tokens. Models with unknown or free pricing show no cost.
 
-The **run inspector** (`Ctrl J`) adds:
+The **activity ledger** (`Ctrl J`) adds:
 
 - context usage for the run as a share of the model's context window,
 - input, output and total token counts,
@@ -406,9 +411,10 @@ Prices and context windows live in `shared/providers.ts` and are refreshed with 
 
 Hikes keeps a long-term memory in SQLite, separate from chat history.
 
-- `remember` stores a fact with an optional key and tags.
-- `recall` searches it. The query runs against an FTS5 full-text index with BM25 ranking, and falls back to a substring match when the FTS query returns nothing — so partial words and exact substrings still find their entry.
-- **Settings → Memory** lists every stored fact with a search box and lets you delete individual entries.
+- **Automatic personal memory** is enabled by default. After a successful answer, a bounded tools-disabled pass extracts up to three durable facts or preferences explicitly stated in your message. One-off tasks, attachments, guesses and obvious secrets are excluded, and normalized duplicates are not saved again. This uses the selected provider and its token usage is included in run telemetry.
+- `remember` stores a fact with optional tags; `recall` searches the FTS5 full-text index with BM25 ranking and a substring fallback.
+- **Settings → Memory** controls automatic saving and lists every stored fact with search, tags and individual deletion. Turning automatic saving off keeps existing entries.
+- Turning off the Memory tool family in **Settings → Agent** stops memory reads, manual writes and automatic writes. Memories are treated as user data, not instructions, when matched into a prompt.
 
 The index is a standalone `memory_fts` table kept in sync with SQLite triggers, which keeps deletes fast and correct.
 
@@ -416,17 +422,16 @@ The index is a standalone `memory_fts` table kept in sync with SQLite triggers, 
 
 ## MCP servers
 
-Hikes speaks the [Model Context Protocol](https://modelcontextprotocol.io). **Settings → MCP** adds a server by command, arguments and environment variables.
+Hikes speaks the [Model Context Protocol](https://modelcontextprotocol.io) over **stdio**. **Settings → MCP** adds a server manually by command, arguments and environment variables, or imports existing local OpenCode JSON/JSONC configurations.
 
-- Servers are launched as local processes over **stdio** and speak JSON-RPC.
-- Their tools join the agent as `mcp__<server>__<tool>`.
-- MCP tools are treated as `execute`-risk, so they ask for approval in Ask first and Balanced modes.
-- A server that fails to start is skipped with a visible error rather than breaking the run.
-- **Test** connects to a server and lists the tools it exposes before you commit to it.
+- On first launch, Hikes imports supported local entries from the user's global OpenCode config and discovered workspace configs. Existing Hikes entries are never overwritten, and a deleted import is not resurrected on the next launch. **Detect existing** runs another scan on demand.
+- Disabled and remote HTTP entries are not imported. This build does not attach to arbitrary running processes or provide remote MCP transport.
+- Servers launch on demand as local processes and speak JSON-RPC over stdio. Concurrent runs share one in-flight connection per server instead of starting duplicate processes.
+- Their tools join the agent as `mcp__<server>__<tool>` and are treated as `execute`-risk, so they ask for approval in Ask first and Balanced modes.
+- A server that fails to start is skipped with a visible error rather than breaking the run. **Test** connects and lists its tools.
+- Environment placeholders such as `{env:MCP_API_KEY}` remain unresolved in the Hikes config and are expanded only when launching the process.
 
-On Windows, commands are launched through `cmd.exe /d /s /c` with verbatim arguments so quoting behaves the way the command line expects.
-
-MCP server definitions live in `~/.hikes/config.json` under `mcp.servers`, alongside everything else.
+On Windows, commands are launched through `cmd.exe /d /s /c` with verbatim arguments so quoting behaves the way the command line expects. MCP definitions live in `~/.hikes/config.json` under `mcp.servers`. Discovery is implemented by Hikes directly; it does not require the OpenCode SDK or runtime.
 
 ---
 
@@ -464,10 +469,10 @@ The only launch-time options are the [CLI flags](#cli-reference), because the UI
 | --- | --- |
 | **General** | Agent name, role, goals, response tone (concise / balanced / thorough), research mode |
 | **Providers** | API keys, base URLs, custom model names, model catalog, connection tests |
-| **Agent** | Workspace, tool toggles, autonomy mode, agent identities and mascots |
-| **Appearance** | Wallpaper, scene, glass quality, motion, custom image fit |
-| **MCP** | MCP server definitions and connection tests |
-| **Memory** | Search, review and delete stored facts |
+| **Agent** | Workspace, tool toggles and server-owned autonomy policy |
+| **Appearance** | Six palettes, sidebar/top-panel/hidden session navigation, interface motion |
+| **MCP** | Automatic/manual server discovery, definitions and connection tests |
+| **Memory** | Automatic-save preference, search, review and delete stored facts |
 | **About** | Version, paths, auth state, keyboard shortcuts |
 
 ### On-disk format
@@ -576,7 +581,7 @@ The API is local, token-protected and intentionally small. Every route below is 
 
 | Method | Path | Purpose |
 | --- | --- | --- |
-| `PUT` | `/api/settings` | Update workspace, default model, tools, autonomy, search keys |
+| `PUT` | `/api/settings` | Update workspace, default model, tools, autonomy, memory preference, search keys |
 | `PUT` | `/api/providers/:id` | Enable a provider, set its key, base URL or custom model |
 | `POST` | `/api/providers/:id/verify` | Verify the connection and refresh the model catalog |
 
@@ -585,6 +590,7 @@ The API is local, token-protected and intentionally small. Every route below is 
 | Method | Path | Purpose |
 | --- | --- | --- |
 | `GET` | `/api/mcp/servers` | List configured servers with their connection status and tools |
+| `POST` | `/api/mcp/discover` | Import newly found local server configurations |
 | `POST` | `/api/mcp/servers` | Add or update a server |
 | `DELETE` | `/api/mcp/servers/:id` | Remove a server |
 | `POST` | `/api/mcp/servers/:id/verify` | Connect and list the server's tools |
@@ -621,6 +627,9 @@ Hikes is a **local tool with real capabilities, not a sandbox**. Read this secti
 - **Scrubbed child environments.** Shell children inherit a scrubbed environment, so provider keys are not visible to commands the agent runs.
 - **Workspace jail.** File tools resolve every path inside the workspace, including symlink checks, and refuse to read `.env` files, SSH keys, certificates and similar secrets.
 - **SSRF guard.** `fetch_url` blocks loopback and private addresses and refuses non-HTTP schemes.
+- **Response headers.** Every response carries a `Content-Security-Policy`, `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY` and `Referrer-Policy: no-referrer`. A page in the same browser cannot frame the app, and the launch token in the address bar is never sent as a referrer.
+- **Request ceilings.** Bodies above 4 MB are refused with `413`, and the run, verification and write routes sit behind fixed-window limits that answer `429` with `Retry-After`. Four runs may be active at once.
+- **Errors stay local.** An unexpected failure answers `{"error": "..."}` and logs the detail to the terminal; stack traces, absolute paths and file contents never reach the browser.
 - **Atomic config writes.** Settings are written to a temp file and renamed, so a crash cannot leave a half-written config.
 
 ### What is not protected
@@ -634,26 +643,32 @@ Hikes is a **local tool with real capabilities, not a sandbox**. Read this secti
 
 ## Appearance
 
-Hikes ships with a liquid-glass interface: frosted panels, real rim refraction, parallax scenery, and typography in Geist and Geist Mono.
+Hikes is a palette-driven agent workspace: a floating navigation bar, an optional session index, a spacious reading column and a docked activity panel. Manrope handles interface type and IBM Plex Mono handles data. Each palette has a coordinated accent rather than sharing one color across every scheme. The ambience is static—there is no wallpaper or parallax.
 
-### Scenes
+### Palettes
 
-Four animated mountain scenes, cycled from the header:
-
-| Scene | Description |
+| Palette | Description |
 | --- | --- |
-| **Alpine Dusk** | Violet peaks, rose horizon |
-| **Polar Night** | Aurora over glacial blue |
-| **First Light** | Lilac peaks, peach sunrise |
-| **Ember Dusk** | Molten sky, charcoal summits |
+| **Daylight** | Glacier-white surfaces and an indigo-iris accent. The default. |
+| **Porcelain** | Warm ivory surfaces with a restrained ink-blue accent. |
+| **Sage** | Green-grey surfaces with a deep moss accent. |
+| **Cinema** | Deep navy panels, luminous iris accents and a restrained static aurora. |
+| **Graphite** | Neutral charcoal with a warm sand accent. |
+| **Plum** | Aubergine-black panels with a rose-quartz accent. |
 
-### Wallpapers
+Choose a palette from the **top-bar palette menu** or **Settings → Appearance**. The menu shows all six families with live swatches and includes a shortcut to the related light/dark counterpart. The choice is mirrored to the server, so a new browser or origin opens in the same palette; older Paper and Night settings migrate to Daylight and Cinema.
 
-Six presets — Alpine, Aurora, Mesh, Grid, Solid and Custom. A custom image is downscaled and compressed in the browser before it is stored. Each wallpaper has its own opacity, blur, scrim and parallax controls, plus a **Cover / Contain** fit so a custom image fills the window the way you want instead of stretching.
+### Icon
 
-### Performance
+`assets/hikes-icon.png` is the application mark. `index.html` points the tab and the touch icon at it, and adds `hikes-icon-dark.png` when the browser chrome prefers dark. The artwork is tightly cropped so the mark fills roughly 77% of the icon width and 86% of its height instead of disappearing inside transparent padding. The interface uses the same treatment at larger, more visible sizes in the top bar, welcome screen, conversation header, assistant messages, gate and wizard — `hikes-mark.png` for light palettes and `hikes-mark-dark.png` for dark palettes. The static route serves those files from the build output, so the tab, the window and the packaged app carry the same mark.
 
-The interface is tuned for a smooth frame budget: glass effects avoid expensive backdrop blurs, the rim is synchronised on a slow cadence instead of per frame, and the scenery is static where it can be. **Settings → Appearance** also offers a **Lite** glass mode and a motion toggle for reduced-motion preferences.
+### Layout
+
+A floating 56px top bar carries the enlarged Hikes mark, workspace name, search, activity toggle, palette menu, settings and profile. **Settings → Appearance** offers three session layouts: a 268px docked **sidebar**, a drop-down **top panel**, or **hidden** for a full-width conversation. The top-left session button and `Ctrl B` toggle the selected layout; Hidden opens a temporary top panel when sessions are requested. Sessions are grouped by recency with message counts rather than repeated agent labels, while the conversation uses labeled, right-aligned user bubbles and a full-width assistant reading column. The **activity panel** docks on the right with the live timeline, token counts and sources. Below 1024px the docked session index becomes an overlay; below 1280px the activity panel does the same, and the two never cover the work area at once.
+
+### Motion
+
+Short fades and slides mark arrivals and panel changes. The composer gains a palette-colored focus halo and a small send-button response without moving the surrounding layout or adding a second outline to the textarea. **Settings → Appearance** has a motion toggle for reduced-motion preferences; the operating-system preference is honoured as well.
 
 ---
 
@@ -662,11 +677,11 @@ The interface is tuned for a smooth frame budget: glass effects avoid expensive 
 | Shortcut | Action |
 | --- | --- |
 | `Ctrl K` | Command palette |
-| `Ctrl B` | Show or hide the session sidebar |
-| `Ctrl J` | Show or hide the run inspector |
+| `Ctrl B` | Show or hide sessions using the selected sidebar/top-panel layout |
+| `Ctrl J` | Show or hide the activity ledger |
 | `Esc` | Close settings, palette or menus |
 
-The command palette can start a new session, toggle deep research, export the current session as Markdown, toggle the sidebar and inspector, and jump straight to any settings tab.
+The command palette can start a new session, toggle deep research, export the current session as Markdown, toggle the session index and activity ledger, and jump straight to any settings tab.
 
 ---
 
@@ -693,7 +708,7 @@ npm run preview    # preview the production build
 | --- | --- |
 | Runtime | Node 22.18+ (native TypeScript execution, `node:sqlite`) |
 | API | Hono on `@hono/node-server` |
-| UI | React 19, Vite 7, Tailwind CSS 4, Framer Motion, `liquid-glass-react` |
+| UI | React 19, Vite 7, Tailwind CSS 4, Framer Motion |
 | Icons | Lucide |
 | Storage | SQLite with FTS5 |
 | Validation | Zod |
@@ -730,6 +745,7 @@ server/
   launcher.ts         ports, token, Vite wiring, banner, browser
   quiet.ts            silences the node:sqlite experimental warning
   auth.ts             loopback guard and token authentication
+  http.ts             security headers, body ceiling, rate limits
   config.ts           ConfigStore — the on-disk settings
   db.ts               SQLite schema, FTS5 index, snapshots, digests
   agent/
@@ -748,10 +764,14 @@ shared/               types shared by server and UI
   providers.ts        provider metadata and the model catalog
 src/
   App.tsx             application shell
-  components/         chat, composer, panels, settings, sidebar, inspector,
-                      scenes, wallpaper, glass shell and lens, command palette
-  lib/                API client, store, mascots, scenes, wallpapers, motion
-  index.css           design tokens, glass, typography
+  components/         chat, composer, panels, settings, session index,
+                      activity ledger, command palette
+  lib/                API client, store, mascots, motion
+  index.css           design tokens, typography, markdown
+assets/
+  hikes-icon.png      the application mark, 500px source
+  hikes-icon-dark.png the same mark inverted for dark browser chrome
+  hikes-mark.png      96px mark drawn in the interface, with -dark beside it
 ```
 
 ---
@@ -767,7 +787,9 @@ Done:
 - [x] MCP support over stdio
 - [x] FTS5 memory with hybrid ranking
 - [x] Deep research pre-pass
-- [x] Performance pass — no backdrop blurs, cheaper rim, memoised views
+- [x] Quiet workspace redesign — flat surfaces, paper and night themes, no wallpaper or glass
+- [x] Field-ledger workbench — session index, ruled transcript, activity ledger, one ember accent
+- [x] Backend hardening — response headers, body ceiling, rate limits, provider retries, ordered shutdown
 
 Planned:
 
@@ -819,7 +841,7 @@ SOFTWARE.
 - [Framer Motion](https://motion.dev) for animation
 - [Lucide](https://lucide.dev) for every icon in the product
 - [Zod](https://zod.dev) for request validation
-- [Geist](https://vercel.com/font) for the typeface
+- [Manrope](https://manropefont.com) for interface type and [IBM Plex Mono](https://ibm.com/plex) for data
 - [Model Context Protocol](https://modelcontextprotocol.io) for the tool protocol
 - [Node.js](https://nodejs.org) for the runtime, the built-in SQLite module and native TypeScript support
 

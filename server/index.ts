@@ -21,8 +21,10 @@ import { ConfigStore } from "./config.ts";
 import { Db } from "./db.ts";
 import { testProvider } from "./llm/index.ts";
 import { McpManager } from "./mcp/manager.ts";
+import { discoverOpenCodeMcp } from "./mcp/discovery.ts";
 import { resolveInWorkspace } from "./tools/paths.ts";
 import { VERSION } from "./version.ts";
+import { bodyLimit, rateLimit, securityHeaders } from "./http.ts";
 
 interface PendingApproval {
   resolve: (approved: boolean) => void;
@@ -45,6 +47,8 @@ export interface ServerOptions {
   workspace?: string;
   defaultModel?: string;
   staticDir?: string;
+  /** Set false in isolated tests that must not read the user's MCP configs. */
+  discoverMcp?: boolean;
   noAuth?: boolean;
 }
 
@@ -52,6 +56,11 @@ export interface RunningServer {
   port: number;
   close: () => Promise<void>;
 }
+
+/** Runs kept in flight at once. One user, one session in flight per run. */
+const MAX_ACTIVE_RUNS = 4;
+/** Largest JSON body the API will read (attachments travel as text). */
+const MAX_BODY_BYTES = 4_000_000;
 
 const providerPatchSchema = z.object({
   enabled: z.boolean().optional(),
@@ -76,6 +85,7 @@ const mcpServerSchema = z.object({
   command: z.string().min(1).max(400),
   args: z.array(z.string().max(400)).max(40).optional(),
   env: z.record(z.string().max(200), z.string().max(2000)).optional(),
+  cwd: z.string().max(4000).optional(),
   enabled: z.boolean().optional(),
 });
 
@@ -99,6 +109,7 @@ const settingsSchema = z.object({
     })
     .optional(),
   autonomy: z.enum(["ask", "balanced", "auto"]).optional(),
+  memory: z.object({ autoSave: z.boolean() }).optional(),
   onboarded: z.boolean().optional(),
   ui: z.record(z.string(), z.unknown()).optional(),
 });
@@ -142,8 +153,21 @@ const slugify = (value: string): string =>
     .replace(/^-+|-+$/g, "")
     .slice(0, 40) || "server";
 
-export function createApp(options: ServerOptions): { app: Hono; config: ConfigStore; db: Db } {
+export interface CreatedApp {
+  app: Hono;
+  config: ConfigStore;
+  db: Db;
+  /** Stop runs, disconnect MCP servers and close the database. */
+  shutdown: () => Promise<void>;
+}
+
+export function createApp(options: ServerOptions): CreatedApp {
   const config = new ConfigStore({ dataDir: options.dataDir, workspace: options.workspace });
+  // Import known local definitions once. A later manual scan is available in
+  // Settings; deleting an imported server must not resurrect it on restart.
+  if (options.discoverMcp !== false) {
+    config.importMcpServers(discoverOpenCodeMcp({ workspace: config.workspace }).servers, true);
+  }
   if (options.defaultModel) config.setDefaultModel(options.defaultModel, false);
   const db = new Db(path.join(config.dataDir, "hikes.db"));
   const app = new Hono();
@@ -152,7 +176,45 @@ export function createApp(options: ServerOptions): { app: Hono; config: ConfigSt
   const mcp = new McpManager(() => config.mcpServers());
 
   app.use("*", loopbackOnly());
-  app.get("/health", (c) => c.json({ ok: true, version: VERSION }));
+  app.use("*", securityHeaders());
+  app.use("*", bodyLimit(MAX_BODY_BYTES));
+
+  app.use(
+    "*",
+    rateLimit({
+      // A stuck client that retries the same run cannot spend money forever.
+      rules: {
+        run: { max: 120, windowMs: 60_000 },
+        verify: { max: 30, windowMs: 60_000 },
+        write: { max: 600, windowMs: 60_000 },
+      },
+      classify: (path, method) => {
+        if (method === "GET" || method === "HEAD") return null;
+        if (path === "/api/runs") return "run";
+        if (path.includes("/verify")) return "verify";
+        return "write";
+      },
+    }),
+  );
+
+  app.get("/health", (c) =>
+    c.json({
+      ok: true,
+      version: VERSION,
+      uptimeSec: Math.round(process.uptime()),
+      activeRuns: activeRuns.size,
+      sessions: db.sessionCount(),
+      memories: db.memoryCount(),
+    }),
+  );
+
+  // Anything unexpected becomes a short JSON error. Stack traces stay in the
+  // terminal: they contain absolute paths and file contents.
+  app.onError((error, c) => {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error(`[hikes] ${c.req.method} ${c.req.path} → ${message}`);
+    return c.json({ error: "The server could not complete that request." }, 500);
+  });
 
   app.use("/api/*", tokenAuth(options.token, options.noAuth));
 
@@ -173,6 +235,7 @@ export function createApp(options: ServerOptions): { app: Hono; config: ConfigSt
         brave: Boolean(config.config.search.braveKey),
       },
       memoryCount: db.memoryCount(),
+      memory: { ...config.config.memory },
       tokenRequired: !options.noAuth,
       // The server owns the onboarding flag, so the wizard does not come back
       // when the browser lands on a different origin.
@@ -324,6 +387,19 @@ export function createApp(options: ServerOptions): { app: Hono; config: ConfigSt
 
   app.get("/api/mcp/servers", (c) => c.json({ servers: mcp.list() }));
 
+  app.post("/api/mcp/discover", (c) => {
+    const discovered = discoverOpenCodeMcp({ workspace: config.workspace });
+    const imported = config.importMcpServers(discovered.servers);
+    return c.json({
+      ok: true,
+      imported,
+      discovered: discovered.servers.length,
+      sources: discovered.sources,
+      skipped: discovered.skipped,
+      servers: mcp.list(),
+    });
+  });
+
   app.post("/api/mcp/servers", async (c) => {
     const body = mcpServerSchema.safeParse(await c.req.json().catch(() => ({})));
     if (!body.success) return fail("Invalid MCP server settings.");
@@ -336,6 +412,7 @@ export function createApp(options: ServerOptions): { app: Hono; config: ConfigSt
       command,
       args: body.data.args ?? [],
       env: body.data.env ?? {},
+      ...(body.data.cwd ? { cwd: body.data.cwd } : {}),
       enabled: body.data.enabled ?? true,
     };
     config.upsertMcpServer(server);
@@ -423,6 +500,7 @@ export function createApp(options: ServerOptions): { app: Hono; config: ConfigSt
     }
     if (body.data.tools) config.setTools(body.data.tools);
     if (body.data.autonomy) config.setAutonomy(body.data.autonomy);
+    if (body.data.memory) config.setMemory(body.data.memory);
     if (body.data.search) config.updateSearch(body.data.search);
     if (body.data.onboarded !== undefined) config.setOnboarded(body.data.onboarded);
     if (body.data.ui) config.setUi(body.data.ui);
@@ -437,6 +515,7 @@ export function createApp(options: ServerOptions): { app: Hono; config: ConfigSt
       workspace: config.workspace,
       tools: config.config.tools,
       autonomy: config.config.autonomy,
+      memory: { ...config.config.memory },
       defaultModel: config.resolvedDefaultModel(),
       onboarded: config.config.onboarded,
       search: {
@@ -464,9 +543,17 @@ export function createApp(options: ServerOptions): { app: Hono; config: ConfigSt
     if (sessionRuns.has(body.data.sessionId)) {
       return fail("This session already has a run in progress.", 409);
     }
+    // One session per run is not enough on its own: a client that opens
+    // several sessions could still flood the machine with parallel runs.
+    if (activeRuns.size >= MAX_ACTIVE_RUNS) {
+      return fail("Too many runs are active at once. Let one finish first.", 429);
+    }
 
     const input: RunRequest = {
       ...body.data,
+      // Tool availability and autonomy are server policy, not browser choices.
+      tools: { ...config.config.tools },
+      autonomy: config.config.autonomy,
       full: body.data.full || body.data.text,
     };
     const runId = randomUUID();
@@ -593,17 +680,76 @@ export function createApp(options: ServerOptions): { app: Hono; config: ConfigSt
 
   if (options.staticDir) {
     const indexFile = path.join(options.staticDir, "index.html");
+    const root = path.resolve(options.staticDir);
+    // The single-file build still emits the icon rasters beside index.html, so
+    // every real file has to be served as itself before the shell fallback.
+    const TYPES: Record<string, string> = {
+      ".png": "image/png",
+      ".jpg": "image/jpeg",
+      ".jpeg": "image/jpeg",
+      ".svg": "image/svg+xml",
+      ".ico": "image/x-icon",
+      ".webp": "image/webp",
+      ".avif": "image/avif",
+      ".woff2": "font/woff2",
+      ".json": "application/json",
+      ".txt": "text/plain; charset=utf-8",
+    };
     app.get("*", async (c) => {
       if (!fs.existsSync(indexFile)) return c.text("UI build not found. Run `npm run build` first.", 404);
+      let requested = "/";
+      try {
+        requested = decodeURIComponent(new URL(c.req.url).pathname);
+      } catch {
+        return c.text("Bad request.", 400);
+      }
+      // Resolve first, then require the result to sit inside the build output,
+      // so `..` segments cannot walk out of it.
+      const file = path.resolve(root, "." + requested);
+      if (file.startsWith(root + path.sep) && file !== indexFile) {
+        const type = TYPES[path.extname(file).toLowerCase()];
+        if (type) {
+          try {
+            if ((await fs.promises.stat(file)).isFile()) {
+              const bytes = await fs.promises.readFile(file);
+              c.header("cache-control", "public, max-age=3600");
+              return c.body(
+                bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer,
+                200,
+                { "content-type": type },
+              );
+            }
+          } catch {
+            /* missing asset falls through to the shell */
+          }
+        }
+      }
       return c.html(await fs.promises.readFile(indexFile, "utf8"));
     });
   }
 
-  return { app, config, db };
+  // Ordered so a half-finished run can never leave a sub-process behind.
+  const shutdown = async () => {
+    for (const run of activeRuns.values()) {
+      for (const approval of run.approvals.values()) approval.resolve(false);
+      run.approvals.clear();
+      run.controller.abort();
+    }
+    activeRuns.clear();
+    sessionRuns.clear();
+    await mcp.stopAll();
+    try {
+      db.close();
+    } catch {
+      /* already closed */
+    }
+  };
+
+  return { app, config, db, shutdown };
 }
 
 export async function startServer(options: ServerOptions): Promise<RunningServer> {
-  const { app, db } = createApp(options);
+  const { app, shutdown } = createApp(options);
   const port = options.port ?? 8787;
   const hostname = options.hostname ?? "127.0.0.1";
 
@@ -631,8 +777,10 @@ export async function startServer(options: ServerOptions): Promise<RunningServer
   return {
     port: running.port,
     close: async () => {
+      // Stop accepting work first, then let the runs, MCP servers and the
+      // database finish in order.
       await originalClose();
-      db.close();
+      await shutdown();
     },
   };
 }

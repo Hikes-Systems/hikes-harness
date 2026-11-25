@@ -1,13 +1,11 @@
 import { useMemo } from "react";
 import {
-  Activity,
   Brain,
   Check,
   Cpu,
   ExternalLink,
   FileText,
   FolderOpen,
-  Gauge,
   Globe,
   ListTree,
   PanelRightClose,
@@ -15,7 +13,7 @@ import {
   Telescope,
   Terminal,
 } from "lucide-react";
-import { Burst, Spinner } from "./ui";
+import { IconButton, Spinner } from "./ui";
 import { STEP_ICON } from "./Chat";
 import { useServer } from "../lib/server";
 import { useStore } from "../store";
@@ -23,11 +21,13 @@ import { providerMeta } from "@shared/providers";
 import type { Msg, Session, Source, SubAgentTask } from "../lib/types";
 import { cn } from "../utils/cn";
 
-function Stat({ label, value }: { label: string; value: string }) {
+function Row({ label, value, title }: { label: string; value: string; title?: string }) {
   return (
-    <div className="rounded-2xl bg-white/[0.07] px-3.5 py-3 shadow-[inset_0_1px_0_rgba(255,255,255,.18)]">
-      <div className="text-[10.5px] uppercase tracking-[0.14em] text-white/45">{label}</div>
-      <div className="mt-1 truncate font-mono text-[18px] leading-none">{value}</div>
+    <div className="flex items-baseline justify-between gap-3 border-b border-[var(--line)] py-2">
+      <dt className="shrink-0 text-[12px] t-muted">{label}</dt>
+      <dd className="min-w-0 truncate text-right font-mono text-[11.5px] t-ink2" title={title}>
+        {value}
+      </dd>
     </div>
   );
 }
@@ -63,58 +63,70 @@ function SubAgentRow({ task }: { task: SubAgentTask }) {
   const done = (task.steps ?? []).filter((step) => step.state === "done").length;
   const total = (task.steps ?? []).length;
   return (
-    <div className="rounded-2xl bg-white/[0.06] px-3 py-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,.14)]">
-      <div className="flex items-center gap-2.5">
-        <span className={cn("grid h-7 w-7 shrink-0 place-items-center rounded-xl", running ? "sel-on" : failed ? "bg-amber-300/20 text-amber-100" : "bg-white/10")}>
-          <Icon className="h-3.5 w-3.5" />
-        </span>
+    <div className="border-b border-[var(--line)] py-2 last:border-b-0">
+      <div className="flex items-center gap-2">
+        <Icon className={cn("h-3 w-3 shrink-0", running ? "t-accent" : failed ? "t-warn" : "t-faint")} />
         <div className="min-w-0 flex-1">
-          <div className="truncate text-[13px] font-medium">{task.title}</div>
-          <div className="truncate text-[11px] text-white/40">
+          <div className="truncate text-[11.5px] t-ink">{task.title}</div>
+          <div className="truncate text-[10px] t-faint">
             {taskName(task)} · {running ? "working" : failed ? "failed" : `${total} steps`}
             {task.ms ? ` · ${(task.ms / 1000).toFixed(1)}s` : ""}
           </div>
         </div>
         {running ? (
-          <Spinner className="h-3.5 w-3.5 text-white/60" />
+          <Spinner className="h-3 w-3 t-muted" />
         ) : failed ? (
-          <Cpu className="h-3.5 w-3.5 text-amber-200" />
+          <Cpu className="h-3 w-3 t-warn" />
         ) : (
-          <Check className="h-3.5 w-3.5 text-emerald-300" strokeWidth={3} />
+          <Check className="h-3 w-3 t-ok" strokeWidth={3} />
         )}
       </div>
       {total > 0 && (
-        <div className="mt-2 flex items-center gap-2">
-          <div className="h-1 flex-1 overflow-hidden rounded-full bg-white/10">
+        <div className="mt-1.5 flex items-center gap-2 pl-5">
+          <div className="h-px flex-1 bg-[var(--surface-3)]">
             <div
-              className="h-full rounded-full transition-[width] duration-500"
-              style={{ width: `${Math.round((done / total) * 100)}%`, background: failed ? "#fcd34d" : "var(--accent)" }}
+              className="h-px transition-[width] duration-500"
+              style={{ width: `${Math.round((done / total) * 100)}%`, background: failed ? "var(--warn)" : "var(--accent)" }}
             />
           </div>
-          <span className="shrink-0 font-mono text-[10px] text-white/35">{done}/{total}</span>
+          <span className="shrink-0 font-mono text-[9px] t-faint">{done}/{total}</span>
         </div>
       )}
-      {task.error && <p className="mt-1.5 truncate text-[11px] text-amber-200/80">{task.error}</p>}
+      {task.error && <p className="mt-1 truncate pl-5 text-[10px] t-warn">{task.error}</p>}
     </div>
   );
 }
 
 function SourceRow({ source }: { source: Source }) {
+  const inner = (
+    <>
+      <span className="block truncate text-[11.5px] t-ink2">{source.title}</span>
+      <span className="block truncate text-[10px] t-faint">{source.host}</span>
+    </>
+  );
   return source.url ? (
-    <a href={source.url} target="_blank" rel="noreferrer" className="flex items-start gap-2 rounded-xl bg-white/[0.055] px-2.5 py-2 shadow-[inset_0_1px_0_rgba(255,255,255,.1)] transition hover:bg-white/[0.1]">
-      <ExternalLink className="mt-0.5 h-3 w-3 shrink-0 text-white/35" />
-      <span className="min-w-0 flex-1">
-        <span className="block truncate text-[11.5px] text-white/80">{source.title}</span>
-        <span className="block truncate text-[10.5px] text-white/35">{source.host}</span>
-      </span>
+    <a
+      href={source.url}
+      target="_blank"
+      rel="noreferrer"
+      className="flex items-start gap-2 border-b border-[var(--line)] py-2 transition-colors last:border-b-0 hover:bg-[var(--surface-2)]"
+    >
+      <ExternalLink className="mt-0.5 h-3 w-3 shrink-0 t-faint" />
+      <span className="min-w-0 flex-1">{inner}</span>
     </a>
   ) : (
-    <div className="flex items-start gap-2 rounded-xl bg-white/[0.055] px-2.5 py-2">
-      <FileText className="mt-0.5 h-3 w-3 shrink-0 text-white/35" />
-      <span className="min-w-0 flex-1">
-        <span className="block truncate text-[11.5px] text-white/80">{source.title}</span>
-        <span className="block truncate text-[10.5px] text-white/35">{source.host}</span>
-      </span>
+    <div className="flex items-start gap-2 border-b border-[var(--line)] py-2 last:border-b-0">
+      <FileText className="mt-0.5 h-3 w-3 shrink-0 t-faint" />
+      <span className="min-w-0 flex-1">{inner}</span>
+    </div>
+  );
+}
+
+function SectionLabel({ children, count }: { children: string; count?: number }) {
+  return (
+    <div className="mb-1.5 flex items-baseline justify-between gap-2">
+      <h3 className="text-[12px] font-medium t-ink">{children}</h3>
+      {count !== undefined && <span className="font-mono text-[10px] t-faint">{count}</span>}
     </div>
   );
 }
@@ -132,6 +144,7 @@ export function Inspector({
 }) {
   const { state } = useStore();
   const { boot } = useServer();
+  const workspaceFolder = boot?.workspace.split(/[\\/]/).filter(Boolean).pop() ?? boot?.workspace ?? "";
   const running = run?.status === "running";
   const steps = run?.steps ?? [];
   const subagents = run?.subagents ?? [];
@@ -140,8 +153,10 @@ export function Inspector({
   const tokensIn = usage?.inputTokens;
   const tokensOut = usage?.outputTokens;
   const toolList = [
-    { id: "web", icon: Globe, name: "Web" }, { id: "code", icon: Terminal, name: "Shell" },
-    { id: "files", icon: FileText, name: "Files" }, { id: "memory", icon: Brain, name: "Memory" },
+    { id: "web", icon: Globe, name: "Web" },
+    { id: "code", icon: Terminal, name: "Shell" },
+    { id: "files", icon: FileText, name: "Files" },
+    { id: "memory", icon: Brain, name: "Memory" },
   ] as const;
 
   const promptChars = (prompt?.full ?? prompt?.text ?? "").length;
@@ -185,175 +200,217 @@ export function Inspector({
     return out;
   }, [steps, subagents]);
 
+  const status = run
+    ? running
+      ? { label: "Running", tone: "t-accent" }
+      : run.status === "error"
+        ? { label: "Failed", tone: "t-danger" }
+        : run.status === "stopped"
+          ? { label: "Stopped", tone: "t-muted" }
+          : { label: "Complete", tone: "t-ok" }
+    : { label: "Idle", tone: "t-faint" };
+
   return (
-    <div className="glass-css flex h-full w-full flex-col rounded-[30px] p-4">
-      <div className="mb-4 flex items-center justify-between">
-        <div className="flex items-center gap-2.5">
-          <Activity className="h-[18px] w-[18px] accent-text" />
-          <span className="font-serif text-[22px] leading-none">Run inspector</span>
+    <div className="flex h-full w-full flex-col">
+      <header className="shrink-0 border-b border-[var(--line)] px-4 py-3">
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <h2 className="text-[13px] font-semibold t-ink">Activity</h2>
+            <span className={cn("h-1.5 w-1.5 rounded-full bg-current", status.tone, running && "animate-pulse")} />
+            <span className={cn("text-[11px]", status.tone)}>{status.label}</span>
+          </div>
+          <IconButton onClick={onClose} aria-label="Close activity" title="Close activity">
+            <PanelRightClose className="h-4 w-4" />
+          </IconButton>
         </div>
-        <button onClick={onClose} className="grid h-8 w-8 place-items-center rounded-full text-white/60 transition hover:bg-white/12 hover:text-white" aria-label="Hide inspector"><PanelRightClose className="h-[18px] w-[18px]" /></button>
-      </div>
+      </header>
 
-      <div className="scroll-thin -mr-2 min-h-0 flex-1 space-y-5 overflow-y-auto pr-2">
-        {!run ? (
-          <div className="flex flex-col items-center px-4 py-14 text-center">
-            <Burst className="mb-4 h-12 w-12 opacity-80" />
-            <p className="font-serif text-[22px]">Nothing running</p>
-            <p className="mt-1.5 text-[13px] leading-relaxed text-white/55">Send a message and watch the agent plan, call real tools and compose its answer — step by step.</p>
-          </div>
-        ) : (
-          <>
-            <div className="flex items-center justify-between rounded-2xl bg-white/[0.07] px-4 py-3 shadow-[inset_0_1px_0_rgba(255,255,255,.18)]">
-              <div className="min-w-0">
-                <div className="text-[10.5px] uppercase tracking-[0.14em] text-white/45">{provider || "Model"}</div>
-                <div className="truncate text-[14px] font-medium">{run.model ?? "Unknown"}</div>
-              </div>
-              <span className={cn("inline-flex shrink-0 items-center gap-1.5 rounded-full px-2.5 py-1 text-[12px]", running ? "accent-soft accent-text" : run.status === "error" ? "bg-amber-300/20 text-amber-100" : run.status === "stopped" ? "bg-white/15 text-white/70" : "bg-emerald-300/20 text-emerald-100")}>
-                <span className={cn("h-1.5 w-1.5 rounded-full bg-current", running && "animate-pulse")} />
-                {running ? "Running" : run.status === "error" ? "Failed" : run.status === "stopped" ? "Stopped" : "Complete"}
-              </span>
-            </div>
-
-            {run.research && (
-              <div className="flex items-center gap-2.5 rounded-2xl bg-white/[0.07] px-3.5 py-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,.18)]">
-                <Telescope className="h-4 w-4 accent-text" />
-                <div className="min-w-0 flex-1">
-                  <div className="text-[13px] font-medium">Deep research</div>
-                  <div className="truncate text-[11px] text-white/45">Evidence gathered before the answer</div>
-                </div>
-                <span className="rounded-full bg-white/10 px-2 py-0.5 font-mono text-[10.5px] text-white/55">{sources.length} sources</span>
-              </div>
-            )}
-
-            <div className="grid grid-cols-2 gap-2">
-              <Stat label="Tokens in" value={tokensIn !== undefined ? `${estimated}${compact(tokensIn)}` : "—"} />
-              <Stat label="Tokens out" value={tokensOut !== undefined ? `${estimated}${compact(tokensOut)}` : "—"} />
-              <Stat label="Tool calls" value={String(toolCalls)} />
-              <Stat label="Latency" value={run.ms ? `${(run.ms / 1000).toFixed(1)}s` : running ? "…" : "—"} />
-            </div>
-
-            {cachedTokens > 0 && (
-              <p className="text-[11.5px] leading-relaxed text-white/45">
-                {compact(cachedTokens)} prompt tokens came from the provider&apos;s cache — they were
-                paid for once and reused.
-              </p>
-            )}
-
-            {(cost !== undefined || contextWindow) && (
-              <div className="grid grid-cols-2 gap-2">
-                <Stat
-                  label="Cost"
-                  value={cost === undefined ? "—" : cost === 0 ? "$0.00" : cost < 0.01 ? `$${cost.toFixed(4)}` : `$${cost.toFixed(2)}`}
-                />
-                <Stat
-                  label="Context"
-                  value={
-                    contextWindow
-                      ? `${contextUsed !== undefined ? `${Math.round(contextUsed * 100)}% of ` : ""}${compact(contextWindow)}`
-                      : "—"
-                  }
-                />
-              </div>
-            )}
-
-            {session && (totals.input > 0 || totals.output > 0) && (
-              <div className="rounded-2xl bg-white/[0.07] px-4 py-3 shadow-[inset_0_1px_0_rgba(255,255,255,.18)]">
-                <div className="flex items-center justify-between">
-                  <span className="text-[10.5px] uppercase tracking-[0.14em] text-white/45">Session total</span>
-                  <span className="font-mono text-[11px] text-white/45">
-                    {totals.priced ? `$${totals.spent < 0.01 ? totals.spent.toFixed(4) : totals.spent.toFixed(2)}` : "cost n/a"}
-                  </span>
-                </div>
-                <div className="mt-1.5 flex items-center gap-3 font-mono text-[12px] text-white/70">
-                  <span>{compact(totals.input)} in</span>
-                  <span>{compact(totals.output)} out</span>
-                  <span>{compact(totals.input + totals.output)} total</span>
-                </div>
-              </div>
-            )}
-
-            {promptChars > 0 && (
-              <div className="flex items-center justify-between px-1 text-[11.5px] text-white/40">
-                <span>Prompt</span>
-                <span className="font-mono">{compact(promptChars)} chars</span>
-              </div>
-            )}
-
-            {subagents.length > 0 && (
-              <div>
-                <div className="mb-2.5 flex items-center justify-between px-1">
-                  <span className="text-[10.5px] font-medium uppercase tracking-[0.18em] text-white/40">Sub-agents</span>
-                  <span className="font-mono text-[10.5px] text-white/30">{subagents.length}</span>
-                </div>
-                <div className="space-y-2">
-                  {subagents.map((task) => <SubAgentRow key={task.id} task={task} />)}
-                </div>
-              </div>
-            )}
-
-            <div>
-              <div className="mb-2.5 flex items-center justify-between px-1">
-                <span className="text-[10.5px] font-medium uppercase tracking-[0.18em] text-white/40">Timeline</span>
-                <span className="font-mono text-[10.5px] text-white/30">{steps.length}</span>
-              </div>
-              <div className="relative space-y-3 pl-1">
-                <div className="absolute bottom-3 left-[17px] top-3 w-px bg-white/15" />
-                {steps.map((s) => {
-                  const I = STEP_ICON[s.kind];
-                  const failed = s.tool?.status === "error" || s.tool?.ok === false;
-                  return (
-                    <div key={s.id} className="a-pop relative flex items-start gap-3">
-                      <span className={cn("relative grid h-7 w-7 shrink-0 place-items-center rounded-full", s.state === "running" ? "sel-on" : failed ? "bg-amber-300/20 text-amber-100" : "bg-white/12 shadow-[inset_0_1px_0_rgba(255,255,255,.35)]")}><I className="h-3.5 w-3.5" /></span>
-                      <div className="min-w-0 flex-1 pt-0.5">
-                        <div className="flex items-center justify-between gap-2">
-                          <span className="truncate text-[13px]">{s.label}</span>
-                          <span className="shrink-0 font-mono text-[11px] text-white/40">{s.ms ? `${(s.ms / 1000).toFixed(1)}s` : s.state === "running" ? "…" : ""}</span>
-                        </div>
-                        {s.detail && <div className="truncate font-mono text-[11px] text-white/40">{s.detail}</div>}
-                        {s.summary && <div className={cn("truncate text-[11px]", failed ? "text-amber-200/80" : "text-white/40")}>{s.summary}</div>}
-                      </div>
-                    </div>
-                  );
-                })}
-                {steps.length === 0 && <p className="pl-9 text-[12.5px] text-white/45">Waiting for first event…</p>}
-              </div>
-            </div>
-
-            {sources.length > 0 && (
-              <div>
-                <div className="mb-2.5 flex items-center justify-between px-1">
-                  <span className="text-[10.5px] font-medium uppercase tracking-[0.18em] text-white/40">Sources</span>
-                  <span className="font-mono text-[10.5px] text-white/30">{sources.length}</span>
-                </div>
-                <div className="space-y-1.5">
-                  {sources.map((source, index) => <SourceRow key={`${source.url ?? source.title}-${index}`} source={source} />)}
-                </div>
-              </div>
-            )}
-          </>
-        )}
-
-        <div>
-          <div className="mb-2.5 px-1 text-[10.5px] font-medium uppercase tracking-[0.18em] text-white/40">Harness</div>
-          <div className="flex flex-wrap gap-1.5">
-            {toolList.map((t) => (
-              <span key={t.id} className={cn("inline-flex items-center gap-1.5 rounded-full px-2.5 py-1.5 text-[12px]", state.tools[t.id] ? "sel-on" : "bg-white/[0.06] text-white/35 line-through")}><t.icon className="h-3.5 w-3.5" />{t.name}</span>
-            ))}
-          </div>
-          <div className="mt-3 flex items-center gap-2 rounded-2xl bg-white/[0.07] px-3.5 py-2.5 text-[13px] shadow-[inset_0_1px_0_rgba(255,255,255,.18)]">
-            <Gauge className="h-4 w-4 text-white/60" /> Autonomy <span className="ml-auto capitalize text-white/70">{state.autonomy === "ask" ? "Ask first" : state.autonomy}</span>
-          </div>
-          {boot && (
+      <div className="scroll-thin min-h-0 flex-1 overflow-y-auto">
+        <div className="px-4 pb-5 pt-4">
+          {!run ? (
             <>
-              <div className="mt-2 flex items-center gap-2 rounded-2xl bg-white/[0.07] px-3.5 py-2.5 text-[13px] shadow-[inset_0_1px_0_rgba(255,255,255,.18)]">
-                <FolderOpen className="h-4 w-4 shrink-0 text-white/60" />
-                <span className="shrink-0 text-white/70">Workspace</span>
-                <span className="ml-auto min-w-0 truncate font-mono text-[11px] text-white/45" title={boot.workspace}>{boot.workspace}</span>
+              <dl>
+                <Row label="Tokens" value="—" />
+                <Row label="Steps" value="0" />
+                <Row label="Context" value="—" />
+              </dl>
+              <p className="mt-4 text-[12.5px] leading-relaxed t-muted">
+                No activity yet. Steps appear here as the agent works: tool calls, sources and the tokens
+                each run cost.
+              </p>
+
+              <div className="mt-6">
+                <SectionLabel>Available tools</SectionLabel>
+                <div className="grid grid-cols-2 gap-x-3">
+                  {toolList.map((tool) => (
+                    <div key={tool.id} className="flex items-center gap-1.5 py-1 text-[12px]">
+                      <span className={cn("h-1 w-1 rounded-full", state.tools[tool.id] ? "bg-[var(--ok)]" : "bg-[var(--line-strong)]")} />
+                      <tool.icon className="h-3 w-3 shrink-0 t-faint" />
+                      <span className={state.tools[tool.id] ? "t-ink2" : "t-faint line-through"}>{tool.name}</span>
+                    </div>
+                  ))}
+                </div>
+                <div className="mt-1.5 flex items-center justify-between border-t border-[var(--line)] py-2 text-[10.5px] t-faint">
+                  <span>Autonomy</span>
+                  <span className="capitalize t-muted">{state.autonomy === "ask" ? "Ask first" : state.autonomy}</span>
+                </div>
               </div>
-              <p className="mt-2 px-1 text-[11.5px] text-white/35">Hikes v{boot.version} · {boot.memoryCount} memories · {boot.tokenRequired ? "token-protected" : "auth disabled"}</p>
+            </>
+          ) : (
+            <>
+              <div className="border-b border-[var(--line)] pb-3">
+                <div className="text-[10.5px] t-faint">{provider || "Model"}</div>
+                <div className="mt-0.5 truncate text-[13px] t-ink">{run.model ?? "Unknown"}</div>
+              </div>
+
+              <dl className="mt-1">
+                <Row label="Tokens in" value={tokensIn !== undefined ? `${estimated}${compact(tokensIn)}` : "—"} />
+                <Row label="Tokens out" value={tokensOut !== undefined ? `${estimated}${compact(tokensOut)}` : "—"} />
+                <Row label="Tool calls" value={String(toolCalls)} />
+                <Row label="Latency" value={run.ms ? `${(run.ms / 1000).toFixed(1)}s` : running ? "…" : "—"} />
+                {cost !== undefined && (
+                  <Row
+                    label="Cost"
+                    value={cost === 0 ? "$0.00" : cost < 0.01 ? `$${cost.toFixed(4)}` : `$${cost.toFixed(2)}`}
+                  />
+                )}
+                {contextWindow !== undefined && (
+                  <Row
+                    label="Context"
+                    value={`${contextUsed !== undefined ? `${Math.round(contextUsed * 100)}% of ` : ""}${compact(contextWindow)}`}
+                  />
+                )}
+                {promptChars > 0 && <Row label="Prompt" value={`${compact(promptChars)} chars`} />}
+              </dl>
+
+              {run.research && (
+                <div className="mt-4 flex items-start gap-2 border-l-2 border-[var(--accent)] pl-3">
+                  <Telescope className="mt-0.5 h-3.5 w-3.5 shrink-0 t-accent" />
+                  <div className="min-w-0">
+                    <div className="text-[11.5px] font-medium t-ink">Deep research</div>
+                    <div className="text-[10.5px] leading-relaxed t-muted">
+                      Evidence gathered before the answer · {sources.length} sources
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {cachedTokens > 0 && (
+                <p className="mt-3 text-[10.5px] leading-relaxed t-faint">
+                  {compact(cachedTokens)} prompt tokens were reused from the provider cache.
+                </p>
+              )}
+
+              {session && (totals.input > 0 || totals.output > 0) && (
+                <div className="mt-5">
+                  <SectionLabel>Session total</SectionLabel>
+                  <dl>
+                    <Row label="Input" value={compact(totals.input)} />
+                    <Row label="Output" value={compact(totals.output)} />
+                    <Row label="Total" value={compact(totals.input + totals.output)} />
+                    <Row
+                      label="Spent"
+                      value={
+                        totals.priced
+                          ? totals.spent < 0.01
+                            ? `$${totals.spent.toFixed(4)}`
+                            : `$${totals.spent.toFixed(2)}`
+                          : "cost n/a"
+                      }
+                    />
+                  </dl>
+                </div>
+              )}
+
+              {subagents.length > 0 && (
+                <div className="mt-5">
+                  <SectionLabel count={subagents.length}>Sub-agents</SectionLabel>
+                  {subagents.map((task) => (
+                    <SubAgentRow key={task.id} task={task} />
+                  ))}
+                </div>
+              )}
+
+              <div className="mt-5">
+                <SectionLabel count={steps.length}>Timeline</SectionLabel>
+                <div className="relative">
+                  {steps.length > 0 && <div className="absolute bottom-2 left-[9px] top-2 w-px bg-[var(--line)]" />}
+                  {steps.map((s) => {
+                    const I = STEP_ICON[s.kind];
+                    const failed = s.tool?.status === "error" || s.tool?.ok === false;
+                    return (
+                      <div key={s.id} className="a-pop relative flex items-start gap-2.5 py-1">
+                        <span
+                          className={cn(
+                            "relative z-10 mt-0.5 grid h-5 w-5 shrink-0 place-items-center border bg-[var(--surface)]",
+                            s.state === "running"
+                              ? "border-[var(--accent)] t-accent"
+                              : failed
+                                ? "border-[var(--line)] t-warn"
+                                : "border-[var(--line)] t-faint",
+                          )}
+                        >
+                          <I className="h-2.5 w-2.5" />
+                        </span>
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-baseline justify-between gap-2">
+                            <span className="truncate text-[11px] t-ink2">{s.label}</span>
+                            <span className="shrink-0 font-mono text-[9.5px] t-faint">
+                              {s.ms ? `${(s.ms / 1000).toFixed(1)}s` : s.state === "running" ? "…" : ""}
+                            </span>
+                          </div>
+                          {s.detail && <div className="truncate font-mono text-[9.5px] t-faint">{s.detail}</div>}
+                          {s.summary && <div className={cn("truncate text-[10px]", failed ? "t-warn" : "t-faint")}>{s.summary}</div>}
+                        </div>
+                      </div>
+                    );
+                  })}
+                  {steps.length === 0 && <p className="text-[11px] t-faint">Waiting for the first event…</p>}
+                </div>
+              </div>
+
+              {sources.length > 0 && (
+                <div className="mt-5">
+                  <SectionLabel count={sources.length}>Sources</SectionLabel>
+                  {sources.map((source, index) => (
+                    <SourceRow key={`${source.url ?? source.title}-${index}`} source={source} />
+                  ))}
+                </div>
+              )}
+
+              <div className="mt-5">
+                <SectionLabel>Harness</SectionLabel>
+                <div className="grid grid-cols-2 gap-x-3">
+                  {toolList.map((t) => (
+                    <div key={t.id} className="flex items-center gap-1.5 py-1 text-[12px]">
+                      <span className={cn("h-1 w-1 rounded-full", state.tools[t.id] ? "bg-[var(--ok)]" : "bg-[var(--line-strong)]")} />
+                      <t.icon className="h-3 w-3 shrink-0 t-faint" />
+                      <span className={state.tools[t.id] ? "t-ink2" : "t-faint line-through"}>{t.name}</span>
+                    </div>
+                  ))}
+                </div>
+                <div className="mt-1.5 flex items-center justify-between border-t border-[var(--line)] py-2 text-[10.5px] t-faint">
+                  <span>Autonomy</span>
+                  <span className="capitalize t-muted">{state.autonomy === "ask" ? "Ask first" : state.autonomy}</span>
+                </div>
+              </div>
             </>
           )}
+
+          <div className="mt-5 border-t border-[var(--line)] pt-2.5">
+            <div className="flex items-center gap-2 py-0.5">
+              <FolderOpen className="h-3 w-3 shrink-0 t-faint" />
+              <span className="shrink-0 text-[10.5px] t-faint">Workspace</span>
+              <span className="ml-auto min-w-0 truncate font-mono text-[9.5px] t-muted" title={boot?.workspace}>
+                {workspaceFolder}
+              </span>
+            </div>
+            {boot && (
+              <p className="mt-1.5 text-[9.5px] leading-relaxed t-faint">
+                Hikes v{boot.version} · {boot.memoryCount} memories · {boot.tokenRequired ? "token-protected" : "auth disabled"}
+              </p>
+            )}
+          </div>
         </div>
       </div>
     </div>

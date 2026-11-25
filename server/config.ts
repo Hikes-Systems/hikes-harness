@@ -34,7 +34,9 @@ export interface HikesConfig {
   search: SearchConfig;
   tools: ToolFlags;
   autonomy: Autonomy;
-  mcp: { servers: McpServerConfig[] };
+  mcp: { servers: McpServerConfig[]; autoImported: boolean };
+  /** Server-owned extraction of durable user facts after successful runs. */
+  memory: { autoSave: boolean };
   /**
    * True once the onboarding wizard has been completed on this machine.
    *
@@ -76,7 +78,8 @@ export function defaultConfig(): HikesConfig {
     search: { tavilyKey: "", braveKey: "" },
     tools: { web: true, code: true, files: true, memory: true },
     autonomy: "balanced",
-    mcp: { servers: [] },
+    mcp: { servers: [], autoImported: false },
+    memory: { autoSave: true },
     onboarded: false,
   };
 }
@@ -141,6 +144,9 @@ function normalize(raw: unknown): HikesConfig {
   }
 
   const mcp = data.mcp as Record<string, unknown> | undefined;
+  if (mcp && typeof mcp === "object") {
+    base.mcp.autoImported = Boolean(mcp.autoImported);
+  }
   if (mcp && typeof mcp === "object" && Array.isArray(mcp.servers)) {
     base.mcp.servers = mcp.servers
       .map((entry): McpServerConfig | null => {
@@ -164,10 +170,16 @@ function normalize(raw: unknown): HikesConfig {
           args,
           env,
           enabled: raw.enabled === undefined ? true : Boolean(raw.enabled),
+          ...(typeof raw.cwd === "string" && raw.cwd.trim() ? { cwd: raw.cwd } : {}),
         };
       })
       .filter((entry): entry is McpServerConfig => entry !== null);
   }
+  const memory = data.memory as Record<string, unknown> | undefined;
+  if (memory && typeof memory === "object" && typeof memory.autoSave === "boolean") {
+    base.memory.autoSave = memory.autoSave;
+  }
+
   return base;
 }
 
@@ -414,6 +426,11 @@ export class ConfigStore {
     this.save();
   }
 
+  setMemory(patch: { autoSave: boolean }): void {
+    this.state.memory = { autoSave: patch.autoSave };
+    this.save();
+  }
+
   /* ───────────── MCP servers ───────────── */
 
   mcpServers(): McpServerConfig[] {
@@ -427,6 +444,22 @@ export class ConfigStore {
     else list.push(server);
     this.save();
     return this.mcpServers();
+  }
+
+  /** Add newly discovered servers without replacing any user-defined entry. */
+  importMcpServers(servers: McpServerConfig[], automatic = false): number {
+    if (automatic && this.state.mcp.autoImported) return 0;
+    const existing = new Set(this.state.mcp.servers.map((server) => server.id));
+    let added = 0;
+    for (const server of servers) {
+      if (existing.has(server.id)) continue;
+      this.state.mcp.servers.push(server);
+      existing.add(server.id);
+      added++;
+    }
+    if (automatic) this.state.mcp.autoImported = true;
+    if (added > 0 || automatic) this.save();
+    return added;
   }
 
   removeMcpServer(id: string): void {

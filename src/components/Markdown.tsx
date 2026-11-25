@@ -13,7 +13,7 @@ function highlight(code: string, lang: string): ReactNode[] {
   while ((m = re.exec(code))) {
     if (m.index > last) out.push(code.slice(last, m.index));
     const t = m[0];
-    const cls = /^(#|\/\/)/.test(t) ? "text-white/40 italic" : /^["'`]/.test(t) ? "text-emerald-200" : /^\d/.test(t) ? "text-amber-200" : "accent-text";
+    const cls = /^(#|\/\/)/.test(t) ? "tok-com" : /^["'`]/.test(t) ? "tok-str" : /^\d/.test(t) ? "tok-num" : "tok-kw";
     out.push(<span key={i++} className={cls}>{t}</span>);
     last = m.index + t.length;
   }
@@ -24,17 +24,17 @@ function highlight(code: string, lang: string): ReactNode[] {
 function CodeBlock({ code, lang }: { code: string; lang: string }) {
   const [copied, setCopied] = useState(false);
   return (
-    <div className="my-4 overflow-hidden rounded-2xl" style={{ background: "rgba(6,4,30,.5)", boxShadow: "inset 0 0 0 1px rgba(255,255,255,.12), inset 0 1px 0 rgba(255,255,255,.2)" }}>
-      <div className="flex items-center justify-between border-b border-white/10 px-4 py-2 text-[11.5px] uppercase tracking-wider text-white/50">
+    <div className="my-3 overflow-hidden rounded-[4px] border border-[var(--line)] bg-[var(--code-bg)]">
+      <div className="flex items-center justify-between border-b border-[var(--line)] px-3.5 py-1.5 text-[10.5px] uppercase tracking-[0.1em] t-faint">
         <span>{lang || "text"}</span>
         <button
           onClick={() => { navigator.clipboard?.writeText(code); setCopied(true); setTimeout(() => setCopied(false), 1400); }}
-          className="inline-flex items-center gap-1.5 normal-case tracking-normal text-white/60 transition hover:text-white"
+          className="inline-flex items-center gap-1.5 normal-case tracking-normal t-muted transition-colors hover-ink"
         >
-          {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />} {copied ? "Copied" : "Copy"}
+          {copied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />} {copied ? "Copied" : "Copy"}
         </button>
       </div>
-      <pre className="scroll-thin overflow-x-auto p-4 font-mono text-[13px] leading-relaxed text-white/90"><code>{highlight(code, lang)}</code></pre>
+      <pre className="scroll-thin overflow-x-auto p-3.5 font-mono text-[12.5px] leading-relaxed t-ink2"><code>{highlight(code, lang)}</code></pre>
     </div>
   );
 }
@@ -137,6 +137,8 @@ interface ListItem {
   depth: number;
   text: string;
   ordered: boolean;
+  /** `null` for a normal item, otherwise whether the task is checked. */
+  task: boolean | null;
 }
 
 interface TreeNode {
@@ -164,8 +166,13 @@ function ListNodes({ nodes, start }: { nodes: TreeNode[]; start?: number }) {
   return (
     <Tag className={ordered ? "md-ol" : "md-ul"} start={ordered ? start : undefined}>
       {nodes.map((node, i) => (
-        <li key={i}>
-          <span>{inline(node.item.text)}</span>
+        <li key={i} className={node.item.task !== null ? "md-task" : undefined}>
+          {node.item.task !== null && (
+            <span className={`md-check${node.item.task ? " on" : ""}`} aria-hidden="true">
+              {node.item.task && <Check className="h-2.5 w-2.5" />}
+            </span>
+          )}
+          <span className={node.item.task ? "md-done" : undefined}>{inline(node.item.text)}</span>
           {node.children.length > 0 && <ListNodes nodes={node.children} />}
         </li>
       ))}
@@ -264,10 +271,12 @@ function MarkdownImpl({ text }: { text: string }) {
       while (i < lines.length) {
         const m = /^(\s*)([-*]|\d+\.)\s+(.*)$/.exec(lines[i]);
         if (!m) break;
+        const box = /^\[([ xX])\]\s+(.*)$/.exec(m[3]);
         items.push({
           depth: Math.floor(m[1].length / 2),
-          text: m[3],
+          text: box ? box[2] : m[3],
           ordered: /^\d/.test(m[2]),
+          task: box ? box[1] !== " " : null,
         });
         i++;
       }
@@ -305,7 +314,7 @@ function MarkdownImpl({ text }: { text: string }) {
     blocks.push(<p key={k++}>{inline(buf.join(" "))}</p>);
   }
 
-  return <div className="md text-[16.5px] text-white/90">{blocks}</div>;
+  return <div className="md">{blocks}</div>;
 }
 
 export const Markdown = memo(MarkdownImpl);

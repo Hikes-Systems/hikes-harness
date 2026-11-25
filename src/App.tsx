@@ -1,13 +1,10 @@
 import { useEffect, useRef } from "react";
 import { MotionConfig } from "framer-motion";
-import { WallpaperLayer } from "./components/Wallpaper";
-import { GlassShell } from "./components/GlassShell";
 import { Wizard } from "./components/Wizard";
 import { Harness } from "./components/Harness";
 import { NeedsProvider, ServerGate, Splash } from "./components/Gate";
 import { StoreProvider, useStore } from "./store";
 import { ServerProvider, useServer } from "./lib/server";
-import { sceneVars } from "./lib/scenes";
 
 function Shell() {
   const { state, set, setTools, restore } = useStore();
@@ -38,19 +35,21 @@ function Shell() {
   else content = <Harness />;
 
   return (
-    <div data-scene={state.scene} style={sceneVars(state.scene)} className="themed relative h-dvh w-full overflow-hidden font-sans text-white">
+    <div
+      data-theme={state.theme}
+      data-motion={state.motion ? "on" : "off"}
+      className="relative h-dvh w-full overflow-hidden bg-app font-sans t-ink"
+    >
       <MotionConfig reducedMotion={state.motion ? "never" : "always"}>
-        <WallpaperLayer />
-        <GlassShell>
-          <div className="relative flex min-h-0 flex-1 flex-col">{content}</div>
-          {boot && error && !unauthorized && (
-            <div className="pointer-events-none absolute inset-x-0 bottom-3 z-50 flex justify-center px-3">
-              <div className="pointer-events-auto glass-css max-w-[520px] rounded-full px-4 py-2 text-[12px] text-amber-100 shadow-[inset_0_1px_0_rgba(255,255,255,.18)]">
-                Lost contact with the local harness — {error}
-              </div>
+        {content}
+        {boot && error && !unauthorized && (
+          <div className="pointer-events-none absolute inset-x-0 bottom-4 z-50 flex justify-center px-3">
+            <div className="pointer-events-auto flex max-w-[560px] items-center gap-2 rounded-lg border border-[var(--line-strong)] bg-warn-soft px-3.5 py-2 text-[12.5px] t-warn shadow-[var(--shadow-md)]">
+              <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--warn)]" />
+              Lost contact with the local harness — {error}
             </div>
-          )}
-        </GlassShell>
+          </div>
+        )}
       </MotionConfig>
     </div>
   );

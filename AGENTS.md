@@ -41,7 +41,7 @@ server/
   mcp/           MCP stdio client and server manager
   lib/           diff generation
 shared/          types shared by server and UI — protocol, agents, providers
-src/             React UI — chat, composer, panels, settings, sidebar, inspector, scenes
+src/             React UI — chat, composer, panels, settings, trail log, run deck
 ```
 
 The server is authoritative. The browser renders and sends requests; it never decides policy.

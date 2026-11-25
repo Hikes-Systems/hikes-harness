@@ -1,5 +1,6 @@
 import {
   failure,
+  fetchWithRetry,
   parseJson,
   sseEvents,
   trimSlash,
@@ -90,13 +91,12 @@ export async function* streamOpenAi(req: LLMRequest): AsyncGenerator<ModelEvent>
   // and without it the app can only guess how much a request cost.
   body.stream_options = { include_usage: true };
 
-  const post = async (): Promise<Response> =>
-    fetch(`${root}/chat/completions`, {
-      method: "POST",
-      headers,
-      body: JSON.stringify(body),
-      signal: req.signal,
-    });
+  const post = (): Promise<Response> =>
+    fetchWithRetry(
+      `${root}/chat/completions`,
+      { method: "POST", headers, body: JSON.stringify(body) },
+      { signal: req.signal },
+    );
 
   let res = await post();
   if (!res.ok && res.status === 400 && body.stream_options) {

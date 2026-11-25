@@ -51,7 +51,7 @@ If you see or experience something that breaks this rule, please report it to th
 | **Performance** | Frame budget, startup time, memory use, network chatter |
 | **Documentation** | README, this file, `SECURITY.md`, inline comments |
 | **Manual verification** | An edge case in the agent loop, path safety or the approval policy that nobody has tried yet |
-| **Design** | Glass, motion, typography, layout — the interface is a real part of the product |
+| **Design** | Themes, motion, typography, layout — the interface is a real part of the product |
 
 Good bug reports and design feedback are worth as much as code. Please do not open a pull request before discussing anything substantial.
 
@@ -155,7 +155,7 @@ The suite covers path safety, secret-file refusal, config persistence, compactio
 | **MCP** | The JSON-RPC handshake, tool listing and tool calls over stdio |
 | **Rendering** | Markdown tables, heading hierarchy, nested lists, code blocks |
 | **Prompt cost** | A one-line question stays small; no memory or instruction block is sent without reason |
-| **Menus and panels** | The model menu and the tools popover open above the sidebar and the inspector |
+| **Menus and panels** | The model menu and the tools popover open above the trail log and the run deck |
 
 ---
 
@@ -347,7 +347,7 @@ If you are new to the project, these are approachable starting points:
 - Add a model to the fallback catalog in `shared/providers.ts`.
 - Harden an edge case in the agent loop or the path-safety helpers.
 - Improve an error message so it tells the user what to do next.
-- Add a wallpapers preset or a scene colour variant.
+- Add a theme preset or refine the paper and ink colour scales.
 - Expand the `recall` tool description, or add a tool detail string that reads better in the UI.
 
 Say in the issue that you would like to take it, and we will assign it to you.

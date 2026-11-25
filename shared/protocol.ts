@@ -41,6 +41,8 @@ export interface McpServerConfig {
   command: string;
   args: string[];
   env: Record<string, string>;
+  /** Optional process directory for imported local servers. */
+  cwd?: string;
   enabled: boolean;
 }
 
@@ -223,6 +225,7 @@ export interface Bootstrap {
   autonomy: Autonomy;
   search: { tavily: boolean; brave: boolean };
   memoryCount: number;
+  memory: { autoSave: boolean };
   tokenRequired: boolean;
   /** True when the onboarding wizard has already been completed on this machine. */
   onboarded: boolean;
@@ -241,6 +244,7 @@ export interface SettingsPatch {
   workspace?: string;
   tools?: ToolFlags;
   autonomy?: Autonomy;
+  memory?: { autoSave: boolean };
   onboarded?: boolean;
   ui?: Record<string, unknown>;
   search?: {
@@ -257,7 +261,7 @@ export interface RunRequest {
   full: string;
   files: string[];
   agentId: string;
-  /** User-defined display name for the active agent. */
+  /** Legacy display-name field. Accepted for compatibility but ignored. */
   agentName?: string;
   modelKey: string;
   tools: ToolFlags;

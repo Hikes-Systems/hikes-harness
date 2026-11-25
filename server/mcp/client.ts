@@ -51,9 +51,16 @@ const quoteArg = (value: string): string =>
   /[\s"]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value;
 
 /** Launch a child process in a way that also works with .cmd shims on Windows. */
-function launch(command: string, args: string[], env: NodeJS.ProcessEnv): ChildProcess {
+function launch(command: string, args: string[], env: NodeJS.ProcessEnv, cwd?: string): ChildProcess {
+  const resolvedEnv = Object.fromEntries(
+    Object.entries(env).map(([key, value]) => {
+      const placeholder = typeof value === "string" ? value.match(/^\{env:([A-Za-z_][A-Za-z0-9_]*)\}$/) : null;
+      return [key, placeholder ? process.env[placeholder[1]] ?? "" : value];
+    }),
+  );
   const options: SpawnOptions = {
-    env: { ...process.env, ...env },
+    env: { ...process.env, ...resolvedEnv },
+    ...(cwd ? { cwd } : {}),
     stdio: ["pipe", "pipe", "pipe"],
     windowsHide: true,
   };
@@ -93,7 +100,7 @@ export class McpClient {
   async start(timeoutMs = 20_000): Promise<McpToolDefinition[]> {
     if (this.child) return this.tools;
 
-    const child = launch(this.config.command, this.config.args, this.config.env);
+    const child = launch(this.config.command, this.config.args, this.config.env, this.config.cwd);
     this.child = child;
     this.stderr = "";
 

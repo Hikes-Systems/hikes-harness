@@ -22,7 +22,7 @@ import {
   Terminal,
   Undo2,
 } from "lucide-react";
-import { Burst, Spinner } from "./ui";
+import { MountainMark, Spinner } from "./ui";
 import { Markdown } from "./Markdown";
 import type {
   ApprovalRequest,
@@ -51,9 +51,9 @@ export const STEP_ICON: Record<StepKind, typeof Search> = {
 };
 
 const RISK: Record<ToolRisk, { label: string; cls: string }> = {
-  safe: { label: "Read-only", cls: "bg-emerald-300/15 text-emerald-100" },
-  write: { label: "Writes files", cls: "bg-sky-300/15 text-sky-100" },
-  execute: { label: "Runs a command", cls: "bg-amber-300/15 text-amber-100" },
+  safe: { label: "Read-only", cls: "border-[var(--line)] bg-ok-soft t-ok" },
+  write: { label: "Writes files", cls: "border-[var(--line)] bg-accent-soft t-accent" },
+  execute: { label: "Runs a command", cls: "border-[var(--line)] bg-warn-soft t-warn" },
 };
 
 const TOOL_STATUS: Record<ToolStatus, string> = {
@@ -90,12 +90,12 @@ function formatMs(ms: number): string {
 function DiffView({ change }: { change: FileChange }) {
   const lines = change.diff.split("\n");
   return (
-    <div className="overflow-hidden rounded-xl bg-black/30 shadow-[inset_0_0_0_1px_rgba(255,255,255,.08)]">
-      <div className="flex items-center justify-between gap-2 border-b border-white/10 px-3 py-1.5">
-        <span className="truncate font-mono text-[11px] text-white/60">{change.path}</span>
-        <span className="shrink-0 font-mono text-[10.5px] text-white/40">
-          <span className="text-emerald-200">+{change.additions}</span>{" "}
-          <span className="text-amber-200">-{change.deletions}</span>
+    <div className="overflow-hidden border border-[var(--line)] bg-[var(--code-bg)]">
+      <div className="flex items-center justify-between gap-2 border-b border-[var(--line)] px-3 py-1.5">
+        <span className="truncate font-mono text-[11px] t-muted">{change.path}</span>
+        <span className="shrink-0 font-mono text-[10.5px]">
+          <span className="t-ok">+{change.additions}</span>{" "}
+          <span className="t-warn">-{change.deletions}</span>
         </span>
       </div>
       <pre className="scroll-thin max-h-[240px] overflow-auto px-3 py-2 font-mono text-[11.5px] leading-relaxed">
@@ -105,12 +105,12 @@ function DiffView({ change }: { change: FileChange }) {
             className={cn(
               "block whitespace-pre-wrap break-words",
               line.startsWith("@@")
-                ? "text-white/40"
+                ? "t-faint"
                 : line.startsWith("+")
-                  ? "text-emerald-200"
+                  ? "t-ok"
                   : line.startsWith("-")
-                    ? "text-amber-200"
-                    : "text-white/55",
+                    ? "t-warn"
+                    : "t-ink2",
             )}
           >
             {line || " "}
@@ -140,69 +140,89 @@ function StepRow({
   const expandable = Boolean(tool?.output || s.sources?.length || changes.length);
 
   return (
-    <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={spring.snappy}>
+    <motion.div initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} transition={spring.snappy}>
       <button
         type="button"
         onClick={() => expandable && setOpen((v) => !v)}
         disabled={!expandable}
         className={cn(
-          "flex w-full items-center gap-3 rounded-xl text-left outline-none",
-          expandable && "cursor-pointer hover:bg-white/[0.05]",
+          "flex w-full items-center gap-2.5 px-1 py-1.5 text-left outline-none",
+          expandable && "cursor-pointer transition-colors hover-s2",
         )}
       >
         <span
           className={cn(
-            "glass-css grid h-7 w-7 shrink-0 place-items-center rounded-full",
-            failed && "text-amber-200",
-            denied && "text-white/45",
-            s.state === "running" && "sel-on",
+            "grid h-5 w-5 shrink-0 place-items-center border",
+            failed
+              ? "border-[var(--line)] bg-warn-soft t-warn"
+              : denied
+                ? "border-[var(--line)] bg-surface2 t-faint"
+                : s.state === "running"
+                  ? "border-[var(--accent-line)] bg-accent-soft t-accent"
+                  : "border-[var(--line)] bg-surface2 t-muted",
           )}
         >
-          <Icon className="h-3.5 w-3.5" />
+          <Icon className="h-3 w-3" />
         </span>
-        <div className="min-w-0 flex-1 py-0.5">
+        <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-baseline gap-x-2">
-            <span className={cn("text-[13.5px]", s.state === "running" ? "text-white" : "text-white/80", denied && "text-white/45 line-through")}>{s.label}</span>
-            {tool && <span className="text-[11px] text-white/40">{TOOL_STATUS[tool.status]}</span>}
-            {s.detail && !open && <span className="max-w-[320px] truncate font-mono text-[11.5px] text-white/45">{s.detail}</span>}
+            <span
+              className={cn(
+                "text-[12.5px]",
+                s.state === "running" ? "t-ink" : "t-ink2",
+                denied && "t-faint line-through",
+              )}
+            >
+              {s.label}
+            </span>
+            {tool && <span className="text-[10.5px] t-faint">{TOOL_STATUS[tool.status]}</span>}
+            {s.detail && !open && (
+              <span className="max-w-[320px] truncate font-mono text-[10.5px] t-faint">{s.detail}</span>
+            )}
           </div>
-          {s.summary && <div className={cn("mt-0.5 truncate text-[11.5px]", failed ? "text-amber-200/80" : "text-white/45")}>{s.summary}</div>}
+          {s.summary && (
+            <div className={cn("mt-0.5 truncate text-[11px]", failed ? "t-warn" : "t-muted")}>{s.summary}</div>
+          )}
         </div>
         {s.state === "running" ? (
-          <Spinner className={cn("h-3.5 w-3.5", pending ? "text-amber-200" : "text-white/70")} />
+          <Spinner className={cn("h-3 w-3", pending ? "t-warn" : "t-muted")} />
         ) : (
-          <span className="flex shrink-0 items-center gap-1.5 font-mono text-[11px] text-white/45">
+          <span className="flex shrink-0 items-center gap-1.5 font-mono text-[10.5px] t-faint">
             {s.ms ? formatMs(s.ms) : ""}
-            {failed || denied ? <AlertTriangle className={cn("h-3.5 w-3.5", denied ? "text-white/40" : "text-amber-200")} /> : <Check className="h-3.5 w-3.5 text-emerald-300" strokeWidth={3} />}
+            {failed || denied ? (
+              <AlertTriangle className={cn("h-3 w-3", denied ? "t-faint" : "t-warn")} />
+            ) : (
+              <Check className="h-3 w-3 t-ok" strokeWidth={3} />
+            )}
           </span>
         )}
       </button>
 
       {changes.length ? (
-        <div className="ml-10 mt-2 flex flex-wrap items-center gap-2">
+        <div className="ml-[34px] mt-1.5 flex flex-wrap items-center gap-1.5">
           {changes.map((change) => (
             <span
               key={change.snapshotId ?? change.path}
-              className="inline-flex max-w-[280px] items-center gap-1.5 rounded-full bg-black/25 px-2.5 py-1 font-mono text-[11px] text-white/60 shadow-[inset_0_0_0_1px_rgba(255,255,255,.08)]"
+              className="inline-flex max-w-[280px] items-center gap-1.5 border border-[var(--line)] bg-[var(--surface-2)] px-2 py-1 font-mono text-[10px] t-muted"
             >
-              <FileText className="h-3 w-3 shrink-0" />
+              <FileText className="h-2.5 w-2.5 shrink-0" />
               <span className="truncate">{change.path}</span>
-              <span className="shrink-0 text-emerald-200">+{change.additions}</span>
-              <span className="shrink-0 text-amber-200">-{change.deletions}</span>
+              <span className="shrink-0 t-ok">+{change.additions}</span>
+              <span className="shrink-0 t-warn">-{change.deletions}</span>
             </span>
           ))}
           {changes.every((change) => change.reverted) ? (
-            <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-300/10 px-3 py-1.5 text-[12px] text-emerald-100">
-              <Check className="h-3.5 w-3.5" /> Reverted to this step
+            <span className="inline-flex items-center gap-1.5 border border-[var(--line)] bg-ok-soft px-2 py-1 text-[10.5px] t-ok">
+              <Check className="h-3 w-3" /> Reverted to this step
             </span>
           ) : (
             <button
               type="button"
               disabled={revertBusy || !onRevert}
               onClick={() => onRevert?.(s.id)}
-              className="glass-css glass-hover inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] text-white/75 outline-none disabled:opacity-50"
+              className="btn-secondary inline-flex h-7 items-center gap-1.5 rounded-[4px] px-2 text-[10.5px] outline-none disabled:opacity-50"
             >
-              {revertBusy ? <Spinner className="h-3.5 w-3.5" /> : <Undo2 className="h-3.5 w-3.5" />}
+              {revertBusy ? <Spinner className="h-3 w-3" /> : <Undo2 className="h-3 w-3" />}
               Revert to this step
             </button>
           )}
@@ -215,12 +235,12 @@ function StepRow({
             initial={{ opacity: 0, height: 0 }}
             animate={{ opacity: 1, height: "auto" }}
             exit={{ opacity: 0, height: 0 }}
-            transition={{ duration: 0.24, ease: [0.22, 1, 0.36, 1] }}
+            transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
             className="overflow-hidden"
           >
-            <div className="ml-10 mt-2 space-y-2">
+            <div className="ml-[34px] mt-1.5 space-y-1.5">
               {tool && (
-                <div className="rounded-xl bg-black/25 px-3 py-2 font-mono text-[11.5px] leading-relaxed text-white/65 shadow-[inset_0_0_0_1px_rgba(255,255,255,.08)]">
+                <div className="rounded-md border border-[var(--line)] bg-[var(--code-bg)] px-2.5 py-1.5 font-mono text-[11px] leading-relaxed t-muted">
                   {tool.name}({Object.keys(tool.args ?? {}).length ? JSON.stringify(tool.args) : ""})
                 </div>
               )}
@@ -228,7 +248,7 @@ function StepRow({
                 <DiffView key={change.snapshotId ?? change.path} change={change} />
               ))}
               {tool?.output && (
-                <pre className="scroll-thin max-h-[260px] overflow-auto whitespace-pre-wrap break-words rounded-xl bg-black/30 px-3 py-2.5 font-mono text-[11.5px] leading-relaxed text-white/75 shadow-[inset_0_0_0_1px_rgba(255,255,255,.08)]">
+                <pre className="scroll-thin max-h-[260px] overflow-auto whitespace-pre-wrap break-words rounded-md border border-[var(--line)] bg-[var(--code-bg)] px-2.5 py-2 font-mono text-[11px] leading-relaxed t-ink2">
                   {tool.output}
                 </pre>
               )}
@@ -238,12 +258,12 @@ function StepRow({
       </AnimatePresence>
 
       {s.state === "done" && s.sources && s.sources.length > 0 && (
-        <div className="mb-1 ml-10 mt-2 flex flex-wrap gap-2">
+        <div className="mb-1 ml-[34px] mt-1.5 flex flex-wrap gap-1.5">
           {s.sources.map((x, i) => {
             const inner = (
               <>
-                <span className="block truncate text-white/90">{x.title}</span>
-                <span className="block truncate text-white/45">{x.host}</span>
+                <span className="block truncate text-[11px] t-ink2">{x.title}</span>
+                <span className="block truncate text-[10px] t-faint">{x.host}</span>
               </>
             );
             return x.url ? (
@@ -252,12 +272,15 @@ function StepRow({
                 href={x.url}
                 target="_blank"
                 rel="noreferrer"
-                className="glass-css glass-hover max-w-[220px] truncate rounded-xl px-2.5 py-1.5 text-[11.5px] leading-tight outline-none"
+                className="max-w-[220px] truncate rounded-md border border-[var(--line)] bg-surface px-2 py-1 text-[11px] leading-tight outline-none transition-colors hover-s2"
               >
                 {inner}
               </a>
             ) : (
-              <span key={`${x.title}-${i}`} className="glass-css max-w-[220px] truncate rounded-xl px-2.5 py-1.5 text-[11.5px] leading-tight">
+              <span
+                key={`${x.title}-${i}`}
+                className="max-w-[220px] truncate rounded-md border border-[var(--line)] bg-surface px-2 py-1 text-[11px] leading-tight"
+              >
                 {inner}
               </span>
             );
@@ -286,16 +309,21 @@ function Trace({
   const toolCount = steps.filter((s) => s.tool).length;
   const active = [...steps].reverse().find((s) => s.state === "running");
   return (
-    <div className="mb-4">
-      <button onClick={() => setOpen(!expanded)} className="glass-css glass-hover inline-flex items-center gap-2 rounded-full py-1.5 pl-3 pr-3.5 text-[13px] outline-none">
-        <ChevronRight className={cn("h-3.5 w-3.5 text-white/60 transition-transform duration-300", expanded && "rotate-90")} />
+    <div className="mb-3">
+      <button
+        onClick={() => setOpen(!expanded)}
+        className="-ml-2 inline-flex items-center gap-1.5 rounded-[4px] px-2 py-1 text-[12px] outline-none transition-colors hover-s2"
+      >
+        <ChevronRight
+          className={cn("h-3 w-3 t-faint transition-transform duration-200", expanded && "rotate-90")}
+        />
         {running ? (
           <span className="shimmer-text">{active?.label ?? (msg.research ? "Researching first…" : "Working…")}</span>
         ) : (
-          <span className="text-white/80">
+          <span className="t-muted">
             {msg.research ? "Researched" : "Ran"} {steps.length} {steps.length === 1 ? "step" : "steps"}
-            {toolCount ? ` · ${toolCount} ${toolCount === 1 ? "tool" : "tools"}` : ""}
-            {total ? ` · ${(total / 1000).toFixed(1)}s` : ""}
+            {toolCount ? `, ${toolCount} ${toolCount === 1 ? "tool" : "tools"}` : ""}
+            {total ? `, ${(total / 1000).toFixed(1)}s` : ""}
           </span>
         )}
       </button>
@@ -305,11 +333,11 @@ function Trace({
             initial={{ opacity: 0, height: 0 }}
             animate={{ opacity: 1, height: "auto" }}
             exit={{ opacity: 0, height: 0 }}
-            transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
+            transition={{ duration: 0.26, ease: [0.22, 1, 0.36, 1] }}
             className="overflow-hidden"
           >
-            <div className="relative mt-3 space-y-2.5 pl-1">
-              <div className="absolute bottom-3 left-[18px] top-3 w-px bg-white/15" />
+            <div className="relative mt-2 space-y-1 pl-0.5">
+              <div className="absolute bottom-3 left-[13px] top-3 w-px bg-[var(--line)]" />
               {steps.map((s) => (
                 <div key={s.id} className="relative">
                   <StepRow s={s} onRevert={onRevert} revertBusy={revertBusy} />
@@ -330,26 +358,40 @@ function SubAgentCard({ task }: { task: SubAgentTask }) {
   const failed = task.status === "error";
   return (
     <motion.div
-      initial={{ opacity: 0, y: 8 }}
+      initial={{ opacity: 0, y: 6 }}
       animate={{ opacity: 1, y: 0 }}
       transition={spring.smooth}
-      className="glass-css overflow-hidden rounded-2xl"
+      className="overflow-hidden border-y border-[var(--line)] bg-surface"
     >
-      <button onClick={() => setOpen((v) => !v)} className="flex w-full items-center gap-3 px-3.5 py-3 text-left outline-none">
-        <span className={cn("grid h-8 w-8 shrink-0 place-items-center rounded-xl", running ? "sel-on" : failed ? "bg-amber-300/15 text-amber-100" : "bg-white/10")}>
-          <Icon className="h-4 w-4" />
+      <button onClick={() => setOpen((v) => !v)} className="flex w-full items-center gap-2.5 px-3 py-2.5 text-left outline-none transition-colors hover-s2">
+        <span
+          className={cn(
+            "grid h-5 w-5 shrink-0 place-items-center border",
+            running
+              ? "border-[var(--accent-line)] bg-accent-soft t-accent"
+              : failed
+                ? "border-[var(--line)] bg-warn-soft t-warn"
+                : "border-[var(--line)] bg-surface2 t-muted",
+          )}
+        >
+          <Icon className="h-3.5 w-3.5" />
         </span>
         <span className="min-w-0 flex-1">
           <span className="flex items-center gap-2">
-            <span className="truncate text-[13.5px] font-medium">{task.title}</span>
+            <span className="truncate text-[12.5px] font-medium t-ink">{task.title}</span>
           </span>
-          <span className="mt-0.5 block truncate text-[11.5px] text-white/45">
+          <span className="mt-0.5 block truncate text-[11px] t-muted">
             {SUBAGENT_LABEL(task)} sub-agent · {running ? "working" : failed ? "failed" : `${task.result?.toolCalls ?? task.steps.length} tool calls`}
             {task.ms ? ` · ${(task.ms / 1000).toFixed(1)}s` : ""}
-          </span>
-        </span>
-        {running ? <Spinner className="h-3.5 w-3.5 text-white/70" /> : failed ? <AlertTriangle className="h-4 w-4 text-amber-200" /> : <Check className="h-4 w-4 text-emerald-300" strokeWidth={3} />}
-        <ChevronRight className={cn("h-4 w-4 shrink-0 text-white/45 transition-transform duration-300", open && "rotate-90")} />
+          </span>        </span>
+        {running ? (
+          <Spinner className="h-3.5 w-3.5 t-muted" />
+        ) : failed ? (
+          <AlertTriangle className="h-3.5 w-3.5 t-warn" />
+        ) : (
+          <Check className="h-3.5 w-3.5 t-ok" strokeWidth={3} />
+        )}
+        <ChevronRight className={cn("h-3.5 w-3.5 shrink-0 t-faint transition-transform duration-200", open && "rotate-90")} />
       </button>
       <AnimatePresence initial={false}>
         {open && (
@@ -357,38 +399,38 @@ function SubAgentCard({ task }: { task: SubAgentTask }) {
             initial={{ opacity: 0, height: 0 }}
             animate={{ opacity: 1, height: "auto" }}
             exit={{ opacity: 0, height: 0 }}
-            transition={{ duration: 0.26, ease: [0.22, 1, 0.36, 1] }}
+            transition={{ duration: 0.24, ease: [0.22, 1, 0.36, 1] }}
             className="overflow-hidden"
           >
-            <div className="border-t border-white/10 px-3.5 py-3">
+            <div className="border-t border-[var(--line)] px-3 py-2.5">
               {task.steps.length > 0 && (
-                <div className="mb-2.5 space-y-1">
+                <div className="mb-2 space-y-1">
                   {task.steps.map((step) => {
                     const StepIcon = STEP_ICON[step.kind];
                     return (
-                      <div key={step.id} className="flex items-center gap-2 text-[11.5px] text-white/55">
-                        {step.state === "running" ? <Spinner className="h-3 w-3" /> : <StepIcon className="h-3 w-3 shrink-0 text-white/35" />}
+                      <div key={step.id} className="flex items-center gap-2 text-[11px] t-muted">
+                        {step.state === "running" ? <Spinner className="h-3 w-3" /> : <StepIcon className="h-3 w-3 shrink-0 t-faint" />}
                         <span className="truncate">{step.label}</span>
-                        {step.detail && <span className="ml-auto max-w-[160px] truncate font-mono text-[10.5px] text-white/30">{step.detail}</span>}
+                        {step.detail && <span className="ml-auto max-w-[160px] truncate font-mono text-[10px] t-faint">{step.detail}</span>}
                       </div>
                     );
                   })}
                 </div>
               )}
               {task.result?.summary ? (
-                <div className="scroll-thin max-h-[300px] overflow-y-auto rounded-xl bg-black/20 px-3 py-2.5 text-[12.5px] leading-relaxed text-white/75">
+                <div className="scroll-thin max-h-[300px] overflow-y-auto border-y border-[var(--line)] py-2 text-[12px] leading-relaxed">
                   <Markdown text={task.result.summary} />
                 </div>
               ) : running ? (
-                <p className="text-[12px] text-white/45">The sub-agent is working in its own context.</p>
+                <p className="text-[11.5px] t-muted">The sub-agent is working in its own context.</p>
               ) : (
-                <p className="text-[12px] text-amber-200/80">{task.error ?? "No report produced."}</p>
+                <p className="text-[11.5px] t-warn">{task.error ?? "No report produced."}</p>
               )}
               {task.result?.artifacts.length ? (
                 <div className="mt-2 flex flex-wrap gap-1.5">
                   {task.result.artifacts.map((artifact) => (
-                    <span key={artifact.path} className="inline-flex items-center gap-1.5 rounded-full bg-white/10 px-2.5 py-1 font-mono text-[10.5px] text-white/60">
-                      <FileText className="h-3 w-3" />{artifact.path}
+                    <span key={artifact.path} className="inline-flex items-center gap-1.5 border border-[var(--line)] bg-surface2 px-2 py-1 font-mono text-[10px] t-muted">
+                      <FileText className="h-2.5 w-2.5" />{artifact.path}
                     </span>
                   ))}
                 </div>
@@ -404,9 +446,9 @@ function SubAgentCard({ task }: { task: SubAgentTask }) {
 function DelegatedWork({ tasks }: { tasks: SubAgentTask[] }) {
   if (!tasks.length) return null;
   return (
-    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="mb-4 space-y-2">
-      <div className="flex items-center gap-2 px-1 text-[10.5px] font-medium uppercase tracking-[0.16em] text-white/40">
-        <Bot className="h-3.5 w-3.5" /> Delegated work
+    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="mb-3 space-y-1.5">
+      <div className="flex items-center gap-1.5 px-0.5 text-[10.5px] font-medium t-faint">
+        <Bot className="h-3 w-3" /> Delegated work
       </div>
       {tasks.map((task) => <SubAgentCard key={task.id} task={task} />)}
     </motion.div>
@@ -431,12 +473,15 @@ function SourcesBlock({ steps, subagents }: { steps: Step[]; subagents?: SubAgen
   if (!sources.length) return null;
   const hosts = [...new Set(sources.map((source) => source.host).filter(Boolean))].slice(0, 3);
   return (
-    <div className="mt-4">
-      <button onClick={() => setOpen((v) => !v)} className="glass-css glass-hover inline-flex items-center gap-2 rounded-full py-1.5 pl-3 pr-3.5 text-[12.5px] text-white/75 outline-none">
-        <Globe className="h-3.5 w-3.5 text-white/55" />
+    <div className="mt-3">
+      <button
+        onClick={() => setOpen((v) => !v)}
+        className="-ml-2 inline-flex items-center gap-1.5 rounded-[4px] px-2 py-1 text-[11.5px] t-muted outline-none transition-colors hover-s2 hover-ink"
+      >
+        <Globe className="h-3 w-3 t-faint" />
         Sources · {sources.length}
-        <span className="hidden max-w-[280px] truncate text-white/35 sm:inline">{hosts.join(" · ")}</span>
-        <ChevronRight className={cn("h-3.5 w-3.5 text-white/45 transition-transform duration-300", open && "rotate-90")} />
+        <span className="hidden max-w-[280px] truncate t-faint sm:inline">{hosts.join(" · ")}</span>
+        <ChevronRight className={cn("h-3 w-3 t-faint transition-transform duration-200", open && "rotate-90")} />
       </button>
       <AnimatePresence initial={false}>
         {open && (
@@ -444,25 +489,25 @@ function SourcesBlock({ steps, subagents }: { steps: Step[]; subagents?: SubAgen
             initial={{ opacity: 0, height: 0 }}
             animate={{ opacity: 1, height: "auto" }}
             exit={{ opacity: 0, height: 0 }}
-            transition={{ duration: 0.26, ease: [0.22, 1, 0.36, 1] }}
+            transition={{ duration: 0.24, ease: [0.22, 1, 0.36, 1] }}
             className="overflow-hidden"
           >
-            <div className="mt-2 grid gap-1.5 sm:grid-cols-2">
+            <div className="mt-1.5 grid gap-x-4 border-t border-[var(--line)] sm:grid-cols-2">
               {sources.map((source, index) => {
                 const inner = (
                   <>
-                    <span className="block truncate text-[12.5px] text-white/85">{source.title}</span>
-                    <span className="mt-0.5 block truncate text-[11px] text-white/40">{source.host}</span>
+                    <span className="block truncate text-[11px] t-ink2">{source.title}</span>
+                    <span className="mt-0.5 block truncate text-[10px] t-faint">{source.host}</span>
                   </>
                 );
                 return source.url ? (
-                  <a key={`${source.url}-${index}`} href={source.url} target="_blank" rel="noreferrer" className="glass-css glass-hover flex items-start gap-2 rounded-xl px-3 py-2 outline-none">
-                    <ExternalLink className="mt-0.5 h-3.5 w-3.5 shrink-0 text-white/35" />
+                  <a key={`${source.url}-${index}`} href={source.url} target="_blank" rel="noreferrer" className="flex items-start gap-2 border-b border-[var(--line)] py-1.5 outline-none transition-colors hover-s2">
+                    <ExternalLink className="mt-0.5 h-3 w-3 shrink-0 t-faint" />
                     <span className="min-w-0 flex-1">{inner}</span>
                   </a>
                 ) : (
-                  <span key={`${source.title}-${index}`} className="glass-css flex items-start gap-2 rounded-xl px-3 py-2">
-                    <FileText className="mt-0.5 h-3.5 w-3.5 shrink-0 text-white/35" />
+                  <span key={`${source.title}-${index}`} className="flex items-start gap-2 border-b border-[var(--line)] py-1.5">
+                    <FileText className="mt-0.5 h-3 w-3 shrink-0 t-faint" />
                     <span className="min-w-0 flex-1">{inner}</span>
                   </span>
                 );
@@ -479,42 +524,44 @@ function ApprovalCard({ request, busy, onDecide }: { request: ApprovalRequest; b
   const risk = RISK[request.risk];
   return (
     <motion.div
-      initial={{ opacity: 0, y: 10, scale: 0.98 }}
-      animate={{ opacity: 1, y: 0, scale: 1 }}
+      initial={{ opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
       transition={spring.snappy}
-      className="glass-css mb-4 rounded-2xl p-4 shadow-[inset_0_1px_0_rgba(255,255,255,.2)]"
+      className="mb-4 border-l-2 border-[var(--accent)] bg-[var(--surface-2)] py-3 pl-3 pr-3"
     >
       <div className="flex items-start gap-3">
-        <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-amber-300/15 text-amber-100">
-          <ShieldAlert className="h-[18px] w-[18px]" />
+        <span className="mt-0.5 grid h-6 w-6 shrink-0 place-items-center border border-[var(--line)] bg-surface t-warn">
+          <ShieldAlert className="h-3.5 w-3.5" />
         </span>
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
-            <span className="text-[14px] font-medium">Permission needed</span>
-            <span className={cn("rounded-full px-2 py-0.5 text-[10.5px] font-medium uppercase tracking-wider", risk.cls)}>{risk.label}</span>
+            <span className="text-[13px] font-medium t-ink">Permission needed</span>
+            <span className={cn("rounded-[2px] border px-1.5 py-0.5 text-[9.5px] font-medium", risk.cls)}>
+              {risk.label}
+            </span>
           </div>
-          <p className="mt-1 break-words text-[13.5px] leading-relaxed text-white/75">{request.description}</p>
-          <pre className="scroll-thin mt-2.5 max-h-[180px] overflow-auto whitespace-pre-wrap break-words rounded-xl bg-black/30 px-3 py-2 font-mono text-[11.5px] leading-relaxed text-white/65">
+          <p className="mt-1 break-words text-[12px] leading-relaxed t-muted">{request.description}</p>
+          <pre className="scroll-thin mt-2 max-h-[180px] overflow-auto whitespace-pre-wrap break-words border border-[var(--line)] bg-[var(--code-bg)] px-2.5 py-1.5 font-mono text-[10.5px] leading-relaxed t-ink2">
             {JSON.stringify(request.args, null, 2)}
           </pre>
-          <div className="mt-3 flex items-center gap-2">
+          <div className="mt-3 flex flex-wrap items-center gap-2">
             <button
               type="button"
               disabled={busy}
               onClick={() => onDecide(true)}
-              className="btn-primary glass-hover inline-flex h-9 items-center gap-1.5 rounded-full px-4 text-[13px] font-medium outline-none disabled:opacity-50"
+              className="btn-primary inline-flex h-8 items-center gap-1.5 rounded-[4px] px-3 text-[12px] font-medium outline-none disabled:opacity-50"
             >
-              {busy ? <Spinner className="h-3.5 w-3.5" /> : <ShieldCheck className="h-4 w-4" />} Allow once
+              {busy ? <Spinner className="h-3.5 w-3.5" /> : <ShieldCheck className="h-3.5 w-3.5" />} Allow once
             </button>
             <button
               type="button"
               disabled={busy}
               onClick={() => onDecide(false)}
-              className="glass-css glass-hover inline-flex h-9 items-center gap-1.5 rounded-full px-4 text-[13px] text-white/80 outline-none disabled:opacity-50"
+              className="btn-secondary inline-flex h-8 items-center gap-1.5 rounded-[4px] px-3 text-[12px] outline-none disabled:opacity-50"
             >
               Deny
             </button>
-            <span className="ml-1 text-[11.5px] text-white/40">The agent is paused until you choose.</span>
+            <span className="text-[10.5px] t-faint">The agent is paused until you choose.</span>
           </div>
         </div>
       </div>
@@ -568,16 +615,24 @@ export const MessageView = memo(function MessageView({
   const [copied, setCopied] = useState(false);
   if (msg.role === "user") {
     return (
-      <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={spring.smooth} className="flex justify-end">
-        <div className="glass-css max-w-[85%] rounded-[26px] rounded-br-lg px-5 py-3.5 text-[15.5px] leading-relaxed" style={{ background: "linear-gradient(150deg, color-mix(in oklab, var(--accent) 26%, rgba(255,255,255,.1)), rgba(255,255,255,.06))" }}>
+      <motion.div
+        initial={{ opacity: 0, y: 6 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={spring.smooth}
+        className="flex flex-col items-end py-4 first:pt-2"
+      >
+        <span className="mb-1.5 pr-1 text-[11px] font-medium t-faint">You</span>
+        <div className="max-w-[min(76%,620px)] rounded-[16px] rounded-br-[6px] bg-surface3 px-4 py-3">
           {msg.files && msg.files.length > 0 && (
-            <div className="mb-2 flex flex-wrap gap-1.5">
+            <div className="mb-2 flex flex-wrap gap-x-3 gap-y-1">
               {msg.files.map((f, i) => (
-                <span key={i} className="inline-flex items-center gap-1 rounded-full bg-black/20 px-2 py-0.5 text-[12px]"><Paperclip className="h-3 w-3" />{f}</span>
+                <span key={i} className="inline-flex items-center gap-1 text-[10.5px] t-muted">
+                  <Paperclip className="h-2.5 w-2.5" />{f}
+                </span>
               ))}
             </div>
           )}
-          <div className="whitespace-pre-wrap break-words">{msg.text}</div>
+          <div className="whitespace-pre-wrap break-words text-[15.5px] leading-[1.65] t-ink">{msg.text}</div>
         </div>
       </motion.div>
     );
@@ -586,12 +641,21 @@ export const MessageView = memo(function MessageView({
   const tokens = tokenLabel(msg);
   const cost = costLabel(msg);
   return (
-    <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={spring.smooth} className="flex gap-4">
-      <div className="mt-1 hidden h-8 w-8 shrink-0 place-items-center sm:grid"><Burst className="h-7 w-7" spin={running} /></div>
-      <div className="min-w-0 flex-1">
+    <motion.div
+      initial={{ opacity: 0, y: 6 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={spring.smooth}
+      className="py-6 first:pt-2"
+    >
+      <div className="mb-2.5 flex items-center gap-2">
+        <MountainMark className="h-6 w-6" />
+        <span className="text-[12.5px] font-semibold t-ink">Hikes</span>
+        {running && <span className="text-[11px] t-faint">Working</span>}
+      </div>
+      <div className="min-w-0">
         {msg.research && (
-          <div className="mb-3 inline-flex items-center gap-1.5 rounded-full bg-white/10 px-2.5 py-1 text-[11px] font-medium uppercase tracking-[0.1em] text-white/65 shadow-[inset_0_1px_0_rgba(255,255,255,.18)]">
-            <Telescope className="h-3.5 w-3.5 accent-text" /> Deep research
+          <div className="mb-2 inline-flex items-center gap-1.5 text-[10.5px] font-medium t-accent">
+            <Telescope className="h-3 w-3" /> Deep research
           </div>
         )}
         <Trace msg={msg} onRevert={onRevertStep} revertBusy={revertBusy} />
@@ -602,30 +666,37 @@ export const MessageView = memo(function MessageView({
         {msg.text ? (
           <div className={running ? "caret" : ""}><Markdown text={msg.text} /></div>
         ) : running && !msg.steps?.length ? (
-          <span className="shimmer-text text-[14px]">{msg.research ? "Planning the research…" : "Connecting…"}</span>
+          <span className="shimmer-text text-[13px]">{msg.research ? "Planning the research…" : "Connecting…"}</span>
         ) : running ? (
-          <span className="shimmer-text text-[14px]">{msg.research ? "Researching before answering…" : "Working…"}</span>
+          <span className="shimmer-text text-[13px]">{msg.research ? "Researching before answering…" : "Working…"}</span>
         ) : null}
         {msg.status === "error" && (
-          <div className="glass-css mt-3 flex items-start gap-2.5 rounded-2xl px-4 py-3 text-[13.5px] text-amber-100">
-            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+          <div className="mt-3 flex items-start gap-2 border-l-2 border-[var(--danger)] bg-danger-soft px-3 py-2 text-[12px]">
+            <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 t-danger" />
             <div>
-              <div className="font-medium">The run failed</div>
-              <div className="mt-0.5 break-words text-white/70">{msg.error}</div>
+              <div className="font-medium t-danger">The run failed</div>
+              <div className="mt-0.5 break-words t-ink2">{msg.error}</div>
             </div>
           </div>
         )}
-        {msg.status === "stopped" && <p className="mt-2 text-[12.5px] italic text-white/45">Stopped</p>}
+        {msg.status === "stopped" && <p className="mt-2 text-[11px] italic t-faint">Stopped</p>}
         {!running && <SourcesBlock steps={msg.steps ?? []} subagents={msg.subagents} />}
         {!running && (msg.text || msg.status === "error") && (
-          <div className="mt-3 flex flex-wrap items-center gap-1 text-white/50">
-            <button onClick={() => { void navigator.clipboard?.writeText(msg.text); setCopied(true); setTimeout(() => setCopied(false), 1200); }} className="inline-flex h-8 items-center gap-1.5 rounded-full px-2.5 text-[12.5px] transition hover:bg-white/12 hover:text-white">
-              {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}{copied ? "Copied" : "Copy"}
+          <div className="mt-2 flex flex-wrap items-center gap-0.5 t-faint">
+            <button
+              onClick={() => { void navigator.clipboard?.writeText(msg.text); setCopied(true); setTimeout(() => setCopied(false), 1200); }}
+              className="inline-flex h-7 items-center gap-1.5 rounded-[8px] px-2 text-[11px] transition-colors hover-s2 hover-ink"
+            >
+              {copied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}{copied ? "Copied" : "Copy"}
             </button>
             {canRegenerate && (
-              <button onClick={onRegenerate} className="inline-flex h-8 items-center gap-1.5 rounded-full px-2.5 text-[12.5px] transition hover:bg-white/12 hover:text-white"><RefreshCw className="h-3.5 w-3.5" />Retry</button>
+              <button onClick={onRegenerate} className="inline-flex h-7 items-center gap-1.5 rounded-[8px] px-2 text-[11px] transition-colors hover-s2 hover-ink">
+                <RefreshCw className="h-3 w-3" />Retry
+              </button>
             )}
-            <span className="ml-2 text-[12px] text-white/35">{msg.model}{tokens ? ` · ${tokens}` : ""}{cost ? ` · ${cost}` : ""}{msg.ms ? ` · ${(msg.ms / 1000).toFixed(1)}s` : ""}</span>
+            <span className="ml-2 text-[10px] t-faint">
+              {msg.model}{tokens ? ` · ${tokens}` : ""}{cost ? ` · ${cost}` : ""}{msg.ms ? ` · ${(msg.ms / 1000).toFixed(1)}s` : ""}
+            </span>
           </div>
         )}
       </div>

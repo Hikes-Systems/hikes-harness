@@ -1,7 +1,6 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import {
   AlertTriangle,
-  BookOpen,
   Brain,
   CheckCircle2,
   Clock,
@@ -12,28 +11,28 @@ import {
   Gauge,
   Globe,
   HardDrive,
-  Image,
   Info,
   KeyRound,
   Keyboard,
   Link2,
+  Moon,
   RefreshCw,
-  RotateCcw,
   Search,
   SearchCheck,
   Server,
   ShieldCheck,
+  Sparkles,
+  Sun,
   Terminal,
   Trash2,
-  Upload,
   User,
-  Wand2,
   Zap,
 } from "lucide-react";
 import { Button, Chip, Field, Segmented, Spinner, TextInput, Toggle } from "./ui";
 import {
   deleteMcpServer,
   deleteMemory,
+  discoverMcpServers,
   listMemory,
   listMcpServers,
   saveMcpServer,
@@ -41,13 +40,10 @@ import {
   type MemoryEntry,
 } from "../lib/api";
 import { useServer } from "../lib/server";
-import { useStore, type Autonomy, type Tone } from "../store";
-import { AGENTS } from "@shared/agents";
-import { MASCOTS, resolveAgent } from "../lib/mascots";
+import { useStore, type Autonomy, type SessionNav, type Tone } from "../store";
+import { PALETTES, type PaletteInfo } from "../lib/palettes";
 import { PROVIDERS, providerMeta, type ProviderId } from "@shared/providers";
 import { ProviderLogo } from "./ProviderLogo";
-import { SCENES } from "../lib/scenes";
-import { DEFAULT_WALLPAPER, WALLPAPERS, prepareWallpaper } from "../lib/wallpaper";
 import type { McpServerStatus } from "../lib/types";
 import { cn } from "../utils/cn";
 
@@ -83,7 +79,7 @@ export function ProfilePanel({ autoFocus }: { autoFocus?: boolean }) {
       </Field>
       <Field label="Response style">
         <Segmented value={p.tone} options={TONES.map((t) => ({ id: t.id, label: t.label }))} onChange={(tone) => setProfile({ tone })} />
-        <p className="mt-2 px-1 text-[13px] text-white/55">{TONES.find((t) => t.id === p.tone)?.hint}</p>
+        <p className="mt-2 px-1 text-[12.5px] t-muted">{TONES.find((t) => t.id === p.tone)?.hint}</p>
       </Field>
     </div>
   );
@@ -94,15 +90,15 @@ export function GeneralPanel({ autoFocus }: { autoFocus?: boolean }) {
   return (
     <div className="space-y-7">
       <ProfilePanel autoFocus={autoFocus} />
-      <div className="h-px bg-white/10" />
+      <div className="h-px bg-[var(--line)]" />
       <Field label="Default answer mode" hint="Used for every new message">
-        <div className="flex items-center gap-3 rounded-2xl bg-white/[0.05] px-3.5 py-3 shadow-[inset_0_1px_0_rgba(255,255,255,.12)]">
-          <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-white/[0.08]">
-            <SearchCheck className="h-[18px] w-[18px] text-white/80" />
+        <div className="flex items-center gap-3 rounded-[4px] border border-[var(--line)] bg-surface2 px-3.5 py-3">
+          <span className="grid h-8 w-8 shrink-0 place-items-center rounded-md border border-[var(--line)] bg-surface">
+            <SearchCheck className="h-4 w-4 t-accent" />
           </span>
           <div className="min-w-0 flex-1">
-            <div className="text-[14px] font-medium">Deep research first</div>
-            <div className="text-[12px] leading-relaxed text-white/55">
+            <div className="text-[13px] font-medium t-ink">Deep research first</div>
+            <div className="text-[11.5px] leading-relaxed t-muted">
               Gathers and reads sources in stages before writing the answer. Slower, but grounded.
             </div>
           </div>
@@ -113,7 +109,7 @@ export function GeneralPanel({ autoFocus }: { autoFocus?: boolean }) {
           />
         </div>
       </Field>
-      <p className="px-1 text-[12.5px] leading-relaxed text-white/45">
+      <p className="px-1 text-[11.5px] leading-relaxed t-faint">
         Your name, role, goals and response style travel with each run so the agent can adapt. Nothing here leaves this machine except the request to your chosen model provider.
       </p>
     </div>
@@ -236,37 +232,48 @@ export function ProvidersPanel() {
 
   return (
     <div className="space-y-5">
-      <div className="grid gap-5 md:grid-cols-[208px_1fr]">
-        <div className="scroll-thin flex gap-2 overflow-x-auto pb-1 md:flex-col md:overflow-visible">
+      <div className="grid gap-5 md:grid-cols-[204px_1fr]">
+        <div className="scroll-thin flex gap-1.5 overflow-x-auto pb-1 md:flex-col md:overflow-visible">
           {PROVIDERS.map((p) => {
             const v = boot?.providers[p.id];
             const on = focus === p.id;
             return (
               <button
-                key={p.id} onClick={() => setFocus(p.id)}
-                className={cn("glass-hover flex shrink-0 items-center gap-3 rounded-2xl px-3 py-2.5 text-left outline-none transition-[background-color,box-shadow,transform]", on ? "sel-on" : "glass-css hover:bg-white/10")}
+                key={p.id}
+                onClick={() => setFocus(p.id)}
+                className={cn(
+                  "flex shrink-0 items-center gap-2.5 rounded-[4px] border px-2.5 py-2 text-left outline-none transition-colors",
+                  on
+                    ? "border-[var(--line-strong)] bg-surface shadow-[var(--shadow-sm)]"
+                    : "border-transparent hover-s2",
+                )}
               >
-                <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-white/92 shadow-[0_4px_10px_rgba(0,0,0,.25)] ring-1 ring-white/60">
-                  <ProviderLogo id={p.id} className="h-5 w-5" />
+                <span className="grid h-8 w-8 shrink-0 place-items-center rounded-md border border-black/5 bg-white shadow-[var(--shadow-sm)]">
+                  <ProviderLogo id={p.id} className="h-4 w-4" />
                 </span>
                 <span className="min-w-0 flex-1">
-                  <span className="block truncate text-[14px] font-medium">{p.name}</span>
-                  <span className="block text-[11.5px] text-white/50">{providerState(p.id)}</span>
+                  <span className="block truncate text-[12.5px] font-medium t-ink">{p.name}</span>
+                  <span className="block text-[10.5px] t-faint">{providerState(p.id)}</span>
                 </span>
-                {v?.enabled && <span className={cn("h-2 w-2 rounded-full", v.modelCount > 0 ? "bg-emerald-300 shadow-[0_0_10px_#6ee7b7]" : "accent-bg")} style={v.modelCount > 0 ? undefined : { background: "var(--accent)" }} />}
+                {v?.enabled && (
+                  <span
+                    className="h-1.5 w-1.5 shrink-0 rounded-full"
+                    style={{ background: v.modelCount > 0 ? "var(--ok)" : "var(--accent)" }}
+                  />
+                )}
               </button>
             );
           })}
         </div>
 
-        <div key={focus} className="a-fade glass-css rounded-3xl p-5">
+        <div key={focus} className="a-fade rounded-[6px] border border-[var(--line)] bg-surface p-4 sm:p-5">
           <div className="mb-4 flex items-start justify-between gap-4">
             <div>
-              <h3 className="font-serif text-[26px] leading-tight">{meta.name}</h3>
-              <p className="text-[13.5px] text-white/60">{meta.tagline}</p>
+              <h3 className="text-[17px] font-semibold leading-tight t-ink">{meta.name}</h3>
+              <p className="mt-0.5 text-[12px] t-muted">{meta.tagline}</p>
             </div>
-            <div className="flex items-center gap-2 pt-1">
-              <span className="text-[12px] text-white/50">Enable</span>
+            <div className="flex items-center gap-2 pt-0.5">
+              <span className="text-[11px] t-muted">Enable</span>
               <Toggle on={Boolean(view?.enabled)} onChange={(v) => void toggle(v)} label={`Enable ${meta.name}`} />
             </div>
           </div>
@@ -297,18 +304,19 @@ export function ProvidersPanel() {
               </Field>
             )}
             {focus === "ollama" && (
-              <p className="px-1 text-[12.5px] leading-relaxed text-white/50">
+              <p className="px-1 text-[11.5px] leading-relaxed t-muted">
                 Hikes talks to Ollama from the local server, so no CORS setup is needed. Pull a model first, for example{" "}
-                <code className="rounded bg-white/10 px-1.5 py-0.5 font-mono text-[11.5px]">ollama pull llama3.2</code>.
+                <code className="rounded border border-[var(--line)] bg-[var(--code-bg)] px-1 py-0.5 font-mono text-[10.5px] t-ink2">ollama pull llama3.2</code>.
               </p>
             )}
             {focus === "custom" && (
-              <p className="px-1 text-[12.5px] leading-relaxed text-white/50">
-                Works with LM Studio, vLLM, llama.cpp and anything else exposing an OpenAI-compatible <code className="rounded bg-white/10 px-1.5 py-0.5 font-mono text-[11.5px]">/chat/completions</code> route.
+              <p className="px-1 text-[11.5px] leading-relaxed t-muted">
+                Works with LM Studio, vLLM, llama.cpp and anything else exposing an OpenAI-compatible{" "}
+                <code className="rounded border border-[var(--line)] bg-[var(--code-bg)] px-1 py-0.5 font-mono text-[10.5px] t-ink2">/chat/completions</code> route.
               </p>
             )}
 
-            <div className="flex flex-wrap items-center gap-3 pt-1">
+            <div className="flex flex-wrap items-center gap-2.5 pt-0.5">
               <Button onClick={() => void test()} disabled={status.state === "testing"}>
                 {status.state === "testing" ? <Spinner /> : <Zap className="h-4 w-4" />} Test &amp; save
               </Button>
@@ -317,26 +325,35 @@ export function ProvidersPanel() {
                   Remove key
                 </Button>
               )}
-              {status.state === "ok" && <span className="a-pop flex items-center gap-1.5 text-[13px] text-emerald-200"><CheckCircle2 className="h-4 w-4" /> {status.message}</span>}
-              {status.state === "error" && <span className="a-pop flex items-start gap-1.5 text-[13px] text-amber-200"><AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" /> {status.message}</span>}
+              {status.state === "ok" && (
+                <span className="a-pop flex items-center gap-1.5 text-[12px] t-ok"><CheckCircle2 className="h-3.5 w-3.5" /> {status.message}</span>
+              )}
+              {status.state === "error" && (
+                <span className="a-pop flex items-start gap-1.5 text-[12px] t-warn"><AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" /> {status.message}</span>
+              )}
             </div>
           </div>
-          <p className="mt-5 flex items-start gap-2 border-t border-white/10 pt-4 text-[12.5px] leading-relaxed text-white/50">
-            <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0" /> Keys are stored on this machine in{" "}
-            <span className="font-mono text-white/65">~/.hikes/config.json</span> and never sent to the browser. Requests go straight from the local server to the provider.
+          <p className="mt-4 flex items-start gap-2 border-t border-[var(--line)] pt-3.5 text-[11.5px] leading-relaxed t-faint">
+            <ShieldCheck className="mt-0.5 h-3.5 w-3.5 shrink-0 t-ok" />
+            <span>
+              Keys are stored on this machine in{" "}
+              <span className="font-mono t-muted">~/.hikes/config.json</span> and never sent to the browser. Requests go straight from the local server to the provider.
+            </span>
           </p>
         </div>
       </div>
 
-      <div className="glass-css rounded-3xl p-5">
+      <div className="rounded-[6px] border border-[var(--line)] bg-surface p-4 sm:p-5">
         <div className="mb-1 flex flex-wrap items-center justify-between gap-2">
-          <h3 className="flex items-center gap-2 font-serif text-[22px] leading-tight"><SearchCheck className="h-[18px] w-[18px] accent-text" /> Web search</h3>
-          <div className="flex gap-2 text-[11.5px] text-white/50">
-            {boot?.search.tavily && <span className="rounded-full bg-emerald-300/15 px-2 py-0.5 text-emerald-100">Tavily saved</span>}
-            {boot?.search.brave && <span className="rounded-full bg-emerald-300/15 px-2 py-0.5 text-emerald-100">Brave saved</span>}
+          <h3 className="flex items-center gap-2 text-[15px] font-semibold leading-tight t-ink">
+            <SearchCheck className="h-4 w-4 t-accent" /> Web search
+          </h3>
+          <div className="flex gap-1.5 text-[10.5px]">
+            {boot?.search.tavily && <span className="rounded border border-[var(--line)] bg-ok-soft px-1.5 py-0.5 t-ok">Tavily saved</span>}
+            {boot?.search.brave && <span className="rounded border border-[var(--line)] bg-ok-soft px-1.5 py-0.5 t-ok">Brave saved</span>}
           </div>
         </div>
-        <p className="mb-4 text-[13px] leading-relaxed text-white/55">
+        <p className="mb-4 text-[11.5px] leading-relaxed t-muted">
           Search works out of the box through DuckDuckGo. Add a Tavily or Brave key for more reliable results and fewer rate limits.
         </p>
         <div className="grid gap-3 sm:grid-cols-2">
@@ -347,12 +364,12 @@ export function ProvidersPanel() {
             <TextInput secret icon={<KeyRound className="h-4 w-4" />} value={searchDraft.brave} onChange={(e) => setSearchDraft((s) => ({ ...s, brave: e.target.value }))} placeholder={boot?.search.brave ? "Saved — type to replace" : "Brave subscription token"} />
           </Field>
         </div>
-        <div className="mt-3 flex flex-wrap items-center gap-3">
+        <div className="mt-3 flex flex-wrap items-center gap-2.5">
           <Button size="sm" onClick={() => void saveSearch()}>{searchStatus.state === "testing" ? <Spinner /> : <SearchCheck className="h-4 w-4" />} Save search keys</Button>
           {boot?.search.tavily && <Button variant="ghost" size="sm" onClick={() => void saveSearch("tavily")}>Remove Tavily</Button>}
           {boot?.search.brave && <Button variant="ghost" size="sm" onClick={() => void saveSearch("brave")}>Remove Brave</Button>}
-          {searchStatus.state === "ok" && <span className="text-[13px] text-emerald-200">{searchStatus.message}</span>}
-          {searchStatus.state === "error" && <span className="text-[13px] text-amber-200">{searchStatus.message}</span>}
+          {searchStatus.state === "ok" && <span className="text-[12px] t-ok">{searchStatus.message}</span>}
+          {searchStatus.state === "error" && <span className="text-[12px] t-warn">{searchStatus.message}</span>}
         </div>
       </div>
     </div>
@@ -374,11 +391,11 @@ const AUTONOMY: { id: Autonomy; label: string; hint: string }[] = [
 
 function InfoRow({ icon: Icon, label, value, mono = true }: { icon: typeof User; label: string; value: string; mono?: boolean }) {
   return (
-    <div className="flex items-start gap-3 rounded-2xl bg-white/[0.06] px-3.5 py-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,.14)]">
-      <Icon className="mt-0.5 h-4 w-4 shrink-0 text-white/55" />
+    <div className="flex items-start gap-2.5 rounded-[4px] border border-[var(--line)] bg-surface2 px-3 py-2">
+      <Icon className="mt-0.5 h-3.5 w-3.5 shrink-0 t-muted" />
       <div className="min-w-0 flex-1">
-        <div className="text-[10.5px] uppercase tracking-[0.14em] text-white/40">{label}</div>
-        <div className={cn("mt-0.5 break-all text-[12.5px] text-white/80", mono && "font-mono")}>{value}</div>
+        <div className="text-[10.5px] t-faint">{label}</div>
+        <div className={cn("mt-0.5 break-all text-[11.5px] t-ink2", mono && "font-mono")}>{value}</div>
       </div>
     </div>
   );
@@ -386,9 +403,8 @@ function InfoRow({ icon: Icon, label, value, mono = true }: { icon: typeof User;
 
 export function AgentPanel() {
   const { boot, saveSettings } = useServer();
-  const { state, set, setTools, setAgentIdentity, resetAgentIdentity } = useStore();
+  const { state, set, setTools } = useStore();
   const [error, setError] = useState<string | null>(null);
-  const [mascotFor, setMascotFor] = useState<string | null>(null);
   const [workspace, setWorkspace] = useState(boot?.workspace ?? "");
   const [workspaceState, setWorkspaceState] = useState<"idle" | "saving" | "ok">("idle");
   const models = boot?.models ?? [];
@@ -442,98 +458,6 @@ export function AgentPanel() {
 
   return (
     <div className="space-y-6">
-      <Field label="Agent identities" hint="Names and mascots">
-        <div className="space-y-2">
-          {AGENTS.map((definition) => {
-            const agent = resolveAgent(definition.id, state.agents);
-            const Icon = agent.Icon;
-            const picker = mascotFor === agent.id;
-            return (
-              <div
-                key={agent.id}
-                className="rounded-2xl bg-white/[0.06] p-3 shadow-[inset_0_1px_0_rgba(255,255,255,.14)]"
-              >
-                <div className="flex items-center gap-3">
-                  <button
-                    type="button"
-                    onClick={() => setMascotFor(picker ? null : agent.id)}
-                    className={cn(
-                      "grid h-11 w-11 shrink-0 place-items-center rounded-2xl outline-none transition-colors",
-                      picker ? "sel-on" : "glass-css glass-hover",
-                    )}
-                    aria-label={`Choose mascot for ${agent.name}`}
-                    aria-expanded={picker}
-                    title="Choose mascot"
-                  >
-                    <Icon className="h-5 w-5 accent-text" />
-                  </button>
-                  <div className="min-w-0 flex-1">
-                    <div className="mb-1 flex items-center gap-2">
-                      <span className="text-[10.5px] uppercase tracking-[0.14em] text-white/40">{agent.desc}</span>
-                      {agent.customized && (
-                        <span className="rounded-full bg-white/10 px-1.5 py-[1px] text-[9px] uppercase tracking-[0.1em] text-white/50">
-                          Custom
-                        </span>
-                      )}
-                    </div>
-                    <input
-                      value={state.agents[agent.id]?.name ?? ""}
-                      onChange={(event) => setAgentIdentity(agent.id, { name: event.target.value })}
-                      onBlur={() => {
-                        if (!state.agents[agent.id]?.name.trim()) resetAgentIdentity(agent.id);
-                      }}
-                      maxLength={40}
-                      placeholder={definition.name}
-                      aria-label={`Name for ${definition.name}`}
-                      className="h-9 w-full rounded-xl bg-white/[0.07] px-3 text-[14px] text-white shadow-[inset_0_0_0_1px_rgba(255,255,255,.08)] outline-none transition-shadow focus:shadow-[inset_0_0_0_1px_rgba(255,255,255,.35)]"
-                    />
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => resetAgentIdentity(agent.id)}
-                    disabled={!agent.customized}
-                    className="grid h-9 w-9 shrink-0 place-items-center rounded-full text-white/60 outline-none transition-colors hover:bg-white/12 hover:text-white disabled:pointer-events-none disabled:opacity-25"
-                    aria-label={`Reset ${agent.name}`}
-                    title="Reset name and mascot"
-                  >
-                    <RotateCcw className="h-4 w-4" />
-                  </button>
-                </div>
-                {picker && (
-                  <div className="mt-3 grid grid-cols-8 gap-1.5">
-                    {MASCOTS.map((mascot) => {
-                      const Mascot = mascot.Icon;
-                      const on = mascot.id === agent.identity.mascot;
-                      return (
-                        <button
-                          key={mascot.id}
-                          type="button"
-                          onClick={() => {
-                            setAgentIdentity(agent.id, { mascot: mascot.id });
-                            setMascotFor(null);
-                          }}
-                          className={cn(
-                            "grid h-8 place-items-center rounded-xl outline-none transition-colors",
-                            on ? "sel-on accent-text" : "bg-white/[0.05] text-white/60 hover:bg-white/12 hover:text-white",
-                          )}
-                          aria-label={mascot.label}
-                          aria-pressed={on}
-                          title={mascot.label}
-                        >
-                          <Mascot className="h-4 w-4" />
-                        </button>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-            );
-          })}
-        </div>
-        <p className="mt-2 px-1 text-[12.5px] text-white/50">
-          Names and mascots appear in the header, session list and the agent&apos;s system prompt.
-        </p>
-      </Field>
       <Field label="Workspace" hint="Used by the file and shell tools">
         <div className="flex flex-col gap-2 sm:flex-row">
           <div className="min-w-0 flex-1">
@@ -555,52 +479,67 @@ export function AgentPanel() {
             {workspaceState === "ok" ? "Updated" : "Use folder"}
           </Button>
         </div>
-        <p className="mt-2 px-1 text-[12.5px] text-white/50">
+        <p className="mt-2 px-1 text-[11.5px] t-faint">
           New runs read and write in this folder. Changes take effect immediately and are remembered for the next launch.
         </p>
       </Field>
       <Field label="Default model" hint={`${models.length} available`}>
         {models.length === 0 ? (
-          <div className="glass-css rounded-2xl px-4 py-3 text-[13.5px] text-white/60">
+          <div className="rounded-[4px] border border-[var(--line)] bg-surface2 px-3.5 py-2.5 text-[12.5px] t-muted">
             No models yet. Connect a provider in the Providers tab first.
           </div>
         ) : (
-          <div className="scroll-thin grid max-h-[190px] gap-2 overflow-y-auto pr-1 sm:grid-cols-2">
+          <div className="scroll-thin grid max-h-[190px] gap-1.5 overflow-y-auto pr-1 sm:grid-cols-2">
             {models.map((m) => {
               const on = m.key === current;
               return (
-                <button key={m.key} onClick={() => pickModel(m.key)} className={cn("glass-hover rounded-2xl px-3.5 py-2.5 text-left outline-none", on ? "sel-on" : "glass-css hover:bg-white/10")}>
+                <button
+                  key={m.key}
+                  onClick={() => pickModel(m.key)}
+                  className={cn(
+                    "rounded-[4px] border px-3 py-2 text-left outline-none transition-colors",
+                    on
+                      ? "border-[var(--accent-line)] bg-accent-soft"
+                      : "border-[var(--line)] bg-surface hover-s2",
+                  )}
+                >
                   <span className="flex items-center justify-between gap-2">
                     <span className="flex min-w-0 items-center gap-1.5">
-                      <span className="truncate text-[14px] font-medium">{m.name}</span>
+                      <span className="truncate text-[12.5px] font-medium t-ink">{m.name}</span>
                       {m.free && (
-                        <span className="shrink-0 rounded-full bg-emerald-300/15 px-1.5 py-[1px] text-[9px] font-semibold uppercase tracking-[0.08em] text-emerald-200">
+                        <span className="shrink-0 rounded border border-[var(--line)] bg-surface px-1 py-px text-[8.5px] font-semibold uppercase tracking-[0.08em] t-ok">
                           Free
                         </span>
                       )}
                     </span>
-                    <span className="grid h-5 w-5 shrink-0 place-items-center rounded-md bg-white/90" title={providerMeta(m.provider).name}>
-                      <ProviderLogo id={m.provider} className="h-3.5 w-3.5" />
+                    <span className="grid h-4 w-4 shrink-0 place-items-center rounded border border-black/5 bg-white" title={providerMeta(m.provider).name}>
+                      <ProviderLogo id={m.provider} className="h-3 w-3" />
                     </span>
                   </span>
-                  <span className="mt-0.5 block truncate text-[12px] text-white/55">{m.desc}</span>
+                  <span className="mt-0.5 block truncate text-[11px] t-muted">{m.desc}</span>
                 </button>
               );
             })}
           </div>
         )}
-        {error && <p className="mt-2 flex items-center gap-1.5 px-1 text-[12.5px] text-amber-200"><AlertTriangle className="h-3.5 w-3.5" /> {error}</p>}
+        {error && <p className="mt-2 flex items-center gap-1.5 px-1 text-[11.5px] t-warn"><AlertTriangle className="h-3 w-3" /> {error}</p>}
       </Field>
       <Field label="Tools the agent may use">
-        <div className="grid gap-2 sm:grid-cols-2">
+        <div className="grid gap-1.5 sm:grid-cols-2">
           {TOOLS.map((t) => {
             const on = state.tools[t.id];
             return (
-              <div key={t.id} className={cn("flex items-center gap-3 rounded-2xl px-3.5 py-3 transition-[background-color,box-shadow]", on ? "sel-on" : "glass-css")}>
-                <t.icon className="h-5 w-5 shrink-0 text-white/80" />
+              <div
+                key={t.id}
+                className={cn(
+                  "flex items-center gap-2.5 rounded-[4px] border px-3 py-2.5 transition-colors",
+                  on ? "border-[var(--accent-line)] bg-accent-soft" : "border-[var(--line)] bg-surface",
+                )}
+              >
+                <t.icon className={cn("h-4 w-4 shrink-0", on ? "t-accent" : "t-muted")} />
                 <div className="min-w-0 flex-1">
-                  <div className="text-[14px] font-medium">{t.name}</div>
-                  <div className="truncate text-[12px] text-white/55">{t.desc}</div>
+                  <div className="text-[12.5px] font-medium t-ink">{t.name}</div>
+                  <div className="truncate text-[10.5px] t-muted">{t.desc}</div>
                 </div>
                 <Toggle on={on} onChange={(v) => updateTool(t.id, v)} label={t.name} />
               </div>
@@ -610,11 +549,11 @@ export function AgentPanel() {
       </Field>
       <Field label="Autonomy">
         <Segmented value={state.autonomy} options={AUTONOMY.map((a) => ({ id: a.id, label: a.label }))} onChange={updateAutonomy} />
-        <p className="mt-2 px-1 text-[13px] text-white/55">{AUTONOMY.find((a) => a.id === state.autonomy)?.hint}</p>
+        <p className="mt-2 px-1 text-[12px] t-muted">{AUTONOMY.find((a) => a.id === state.autonomy)?.hint}</p>
       </Field>
       {boot && (
         <Field label="Harness" hint={`v${boot.version}`}>
-          <div className="grid gap-2 sm:grid-cols-2">
+          <div className="grid gap-1.5 sm:grid-cols-2">
             <InfoRow icon={HardDrive} label="Data" value={boot.dataDir} />
             <InfoRow icon={Brain} label="Memories" value={`${boot.memoryCount} saved`} mono={false} />
             <InfoRow icon={Gauge} label="Node" value={boot.node} />
@@ -625,162 +564,116 @@ export function AgentPanel() {
   );
 }
 
-export function AtmospherePanel() {
+function ThemeCard({ palette, active, onPick }: { palette: PaletteInfo; active: boolean; onPick: () => void }) {
+  return (
+    <button
+      onClick={onPick}
+      className={cn(
+        "overflow-hidden rounded-[12px] border p-1.5 text-left outline-none transition-colors focus-visible:ring-2 focus-visible:ring-[var(--accent-line)]",
+        active
+          ? "border-[var(--accent)] shadow-[0_0_0_1px_var(--accent)]"
+          : "border-[var(--line)] hover:border-[var(--line-strong)]",
+      )}
+      aria-pressed={active}
+      aria-label={`${palette.label} palette`}
+    >
+      <span
+        className="flex h-[92px] gap-1.5 overflow-hidden rounded-[9px] border p-1.5"
+        style={{ background: palette.canvas, borderColor: palette.line }}
+      >
+        <span
+          className="flex w-[28%] flex-col gap-1.5 rounded-[6px] border p-1.5"
+          style={{ background: palette.surface, borderColor: palette.line }}
+        >
+          <span className="h-1.5 w-3/4 rounded-full" style={{ background: palette.accent }} />
+          <span className="h-1 w-full rounded-full" style={{ background: palette.line }} />
+          <span className="h-1 w-2/3 rounded-full" style={{ background: palette.line }} />
+        </span>
+        <span className="flex min-w-0 flex-1 flex-col gap-1.5 p-1.5">
+          <span className="h-1.5 w-1/2 rounded-full" style={{ background: palette.ink }} />
+          <span
+            className="flex-1 rounded-[6px] border"
+            style={{ background: palette.surface, borderColor: palette.line }}
+          />
+          <span className="flex items-center justify-between gap-1">
+            <span className="h-1.5 w-1/3 rounded-full" style={{ background: palette.line }} />
+            <span className="h-2.5 w-2.5 rounded-[3px]" style={{ background: palette.accent }} />
+          </span>
+        </span>
+      </span>
+      <span className="flex items-center justify-between gap-2 px-1 pb-0.5 pt-2">
+        <span>
+          <span className="block text-[12px] font-medium t-ink">{palette.label}</span>
+          <span className="block text-[10.5px] t-faint">{palette.note}</span>
+        </span>
+        <span
+          className={cn(
+            "grid h-4 w-4 shrink-0 place-items-center rounded-full border",
+            active ? "border-[var(--accent)] bg-accent text-[var(--on-accent)]" : "border-[var(--line-strong)] bg-surface",
+          )}
+        >
+          {active && <CheckCircle2 className="h-3 w-3" strokeWidth={3} />}
+        </span>
+      </span>
+    </button>
+  );
+}
+
+export function AppearancePanel() {
   const { state, set } = useStore();
-  const wp = state.wallpaper;
-  const fileRef = useRef<HTMLInputElement>(null);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const patch = (next: Partial<typeof wp>) => set({ wallpaper: { ...wp, ...next } });
-
-  const upload = async (file?: File) => {
-    if (!file) return;
-    setBusy(true);
-    setError(null);
-    try {
-      const image = await prepareWallpaper(file);
-      patch({ id: "custom", image });
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : String(caught));
-    } finally {
-      setBusy(false);
-      if (fileRef.current) fileRef.current.value = "";
-    }
-  };
-
   return (
     <div className="space-y-6">
-      <Field label="Wallpaper" hint="Shows through the glass shell">
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-          {WALLPAPERS.map((preset) => {
-            const on = wp.id === preset.id;
-            const custom = preset.id === "custom";
-            return (
-              <button
-                key={preset.id}
-                onClick={() => (custom ? fileRef.current?.click() : patch({ id: preset.id }))}
-                className={cn("glass-hover group overflow-hidden rounded-3xl p-2 text-left outline-none", on ? "sel-on" : "glass-css hover:bg-white/10")}
-              >
-                <span
-                  className="relative block h-[76px] overflow-hidden rounded-[18px]"
-                  style={{
-                    background: custom && wp.image ? `url("${wp.image}") center / ${wp.fit ?? "cover"} no-repeat` : preset.preview,
-                    backgroundSize: preset.id === "grid" ? "22px 22px, 22px 22px, cover, cover" : undefined,
-                  }}
-                >
-                  {custom && wp.image && on && <span className="absolute inset-0 shadow-[inset_0_0_0_2px_color-mix(in_oklab,var(--accent)_70%,transparent)]" />}
-                  {!wp.image && custom && (
-                    <span className="absolute inset-0 grid place-items-center text-white/50"><Upload className="h-5 w-5" /></span>
-                  )}
-                </span>
-                <span className="block px-2 pb-1 pt-2.5">
-                  <span className="block text-[13.5px] font-medium">{preset.name}</span>
-                  <span className="block text-[11.5px] text-white/50">{preset.note}</span>
-                </span>
-              </button>
-            );
-          })}
-        </div>
-        <input ref={fileRef} type="file" accept="image/*" hidden onChange={(event) => void upload(event.target.files?.[0])} />
-        <div className="mt-2 flex flex-wrap items-center gap-2 px-1">
-          <button onClick={() => fileRef.current?.click()} className="inline-flex items-center gap-1.5 text-[12.5px] text-white/65 underline-offset-2 hover:text-white hover:underline">
-            {busy ? <Spinner className="h-3 w-3" /> : <Image className="h-3.5 w-3.5" />}
-            {wp.image ? "Replace image" : "Upload an image"}
-          </button>
-          {wp.image && (
-            <button onClick={() => patch({ image: "", id: "alpine" })} className="inline-flex items-center gap-1.5 text-[12.5px] text-white/45 hover:text-white">
-              <Trash2 className="h-3.5 w-3.5" /> Remove
-            </button>
-          )}
-          {wp.id === "solid" && (
-            <label className="ml-auto inline-flex items-center gap-2 text-[12px] text-white/55">
-              Colour
-              <input
-                type="color"
-                value={wp.color}
-                onChange={(event) => patch({ color: event.target.value })}
-                className="h-7 w-10 cursor-pointer rounded-lg border border-white/20 bg-transparent p-0.5"
-              />
-            </label>
-          )}
-        </div>
-        {error && <p className="mt-2 flex items-center gap-1.5 px-1 text-[12.5px] text-amber-200"><AlertTriangle className="h-3.5 w-3.5" /> {error}</p>}
-        {wp.id === "custom" && wp.image && (
-          <div className="mt-3 flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-white/[0.05] px-4 py-3 shadow-[inset_0_1px_0_rgba(255,255,255,.12)]">
-            <div>
-              <div className="text-[13px] text-white/75">Image fit</div>
-              <div className="text-[11.5px] text-white/45">Cover fills the window; contain shows the whole image.</div>
-            </div>
-            <Segmented
-              value={wp.fit ?? "cover"}
-              options={[{ id: "cover", label: "Cover" }, { id: "contain", label: "Contain" }]}
-              onChange={(fit) => patch({ fit })}
+      <Field label="Palette" hint="Six curated families">
+        <div className="grid gap-2.5 sm:grid-cols-2">
+          {PALETTES.map((palette) => (
+            <ThemeCard
+              key={palette.id}
+              palette={palette}
+              active={state.theme === palette.id}
+              onPick={() => set({ theme: palette.id })}
             />
-          </div>
-        )}
-      </Field>
-
-      <Field label="Background tuning">
-        <div className="space-y-3 rounded-2xl bg-white/[0.05] px-4 py-4 shadow-[inset_0_1px_0_rgba(255,255,255,.12)]">
-          <label className="block">
-            <span className="mb-1.5 flex items-center justify-between text-[12.5px] text-white/65"><span>Opacity</span><span className="font-mono text-white/45">{wp.opacity}%</span></span>
-            <input type="range" min={20} max={100} value={wp.opacity} onChange={(event) => patch({ opacity: Number(event.target.value) })} className="range" />
-          </label>
-          <label className="block">
-            <span className="mb-1.5 flex items-center justify-between text-[12.5px] text-white/65"><span>Blur</span><span className="font-mono text-white/45">{wp.blur}px</span></span>
-            <input type="range" min={0} max={40} value={wp.blur} onChange={(event) => patch({ blur: Number(event.target.value) })} className="range" />
-          </label>
-          <label className="block">
-            <span className="mb-1.5 flex items-center justify-between text-[12.5px] text-white/65"><span>Dim</span><span className="font-mono text-white/45">{wp.dim}%</span></span>
-            <input type="range" min={0} max={80} value={wp.dim} onChange={(event) => patch({ dim: Number(event.target.value) })} className="range" />
-          </label>
-          <div className="flex items-center justify-between pt-0.5">
-            <span className="text-[13px] text-white/70">Pointer parallax</span>
-            <Toggle on={wp.parallax} onChange={(value) => patch({ parallax: value })} label="Parallax" />
-          </div>
+          ))}
         </div>
       </Field>
 
-      {wp.id === "alpine" && (
-        <Field label="Alpine scene" hint="Changes the whole sky live">
-          <div className="grid grid-cols-2 gap-3">
-            {SCENES.map((s) => {
-              const on = state.scene === s.id;
-              return (
-                <button key={s.id} onClick={() => set({ scene: s.id })} className={cn("glass-hover group overflow-hidden rounded-3xl p-2 text-left outline-none", on ? "sel-on" : "glass-css hover:bg-white/10")}>
-                  <div className="relative h-[84px] overflow-hidden rounded-[18px]" style={{ background: `linear-gradient(to bottom, ${s.sky[0]}, ${s.sky[2]} 45%, ${s.sky[3]} 70%, ${s.sky[4]})` }}>
-                    <div className="absolute left-[58%] top-[44%] h-6 w-6 rounded-full blur-[2px]" style={{ background: s.sun, opacity: 0.9 }} />
-                    {s.peaks.slice(0, 4).map((c, i) => (
-                      <div key={i} className="absolute bottom-0 w-[130%]" style={{ left: `${-12 + i * 9}%`, height: `${64 - i * 12}%`, background: c, clipPath: i % 2 ? "polygon(0 100%, 18% 38%, 30% 62%, 52% 12%, 72% 56%, 86% 34%, 100% 100%)" : "polygon(0 100%, 12% 50%, 34% 18%, 48% 54%, 66% 30%, 84% 60%, 100% 100%)" }} />
-                    ))}
-                  </div>
-                  <div className="px-2 pb-1 pt-2.5">
-                    <div className="text-[14px] font-medium">{s.name}</div>
-                    <div className="text-[12px] text-white/55">{s.blurb}</div>
-                  </div>
-                </button>
-              );
-            })}
-          </div>
-        </Field>
-      )}
+      <Field label="Session navigation" hint="Ctrl B toggles the chosen layout">
+        <Segmented<SessionNav>
+          value={state.sessionNav}
+          options={[
+            { id: "sidebar", label: "Sidebar" },
+            { id: "top", label: "Top panel" },
+            { id: "hidden", label: "Hidden" },
+          ]}
+          onChange={(sessionNav) => set({ sessionNav })}
+        />
+        <p className="mt-2 px-0.5 text-[11.5px] leading-relaxed t-muted">
+          Dock sessions on the left, open them below the top bar, or keep the conversation full width.
+        </p>
+      </Field>
 
-      <div className="grid gap-3 sm:grid-cols-2">
-        <div className="glass-css flex items-center gap-3 rounded-2xl px-4 py-3">
-          <Wand2 className="h-5 w-5 text-white/80" />
-          <div className="flex-1"><div className="text-[14px] font-medium">Mountains in motion</div><div className="text-[12px] text-white/55">Parallax drift</div></div>
-          <Toggle on={state.motion} onChange={(v) => set({ motion: v })} label="Motion" />
+      <Field label="Motion">
+        <div className="flex items-center gap-3 rounded-[12px] border border-[var(--line)] bg-surface2 px-3.5 py-3">
+          <span className="grid h-8 w-8 shrink-0 place-items-center rounded-md border border-[var(--line)] bg-surface">
+            {state.motion ? <Sparkles className="h-4 w-4 t-accent" /> : <Moon className="h-4 w-4 t-muted" />}
+          </span>
+          <div className="min-w-0 flex-1">
+            <div className="text-[13px] font-medium t-ink">Interface motion</div>
+            <div className="text-[11.5px] leading-relaxed t-muted">
+              Short fades and slides as messages and panels arrive. Turn it off for a still interface.
+            </div>
+          </div>
+          <Toggle on={state.motion} onChange={(motion) => set({ motion })} label="Interface motion" />
         </div>
-        <div className="glass-css rounded-2xl px-4 py-3">
-          <div className="mb-2 flex items-center gap-2"><BookOpen className="h-4 w-4 text-white/80" /><span className="text-[14px] font-medium">Glass quality</span></div>
-          <Segmented value="lite" options={[{ id: "lite", label: "Lite" }]} onChange={() => undefined} />
-          <p className="mt-2 text-[12px] leading-relaxed text-white/50">Lite is the stable mode. The liquid refraction is being reworked and returns in a future update.</p>
+      </Field>
+
+      <div className="rounded-[12px] border border-[var(--line)] bg-surface2 px-3.5 py-3">
+        <div className="flex items-center gap-2 text-[12px] font-medium t-ink">
+          <Sun className="h-3.5 w-3.5 t-muted" /> Restrained color, readable type
         </div>
-      </div>
-      <div className="flex items-start justify-between gap-3 px-1">
-        <p className="text-[12.5px] leading-relaxed text-white/50">The shell is a single curved glass surface, with real refraction at its rim. Lite keeps the whole scene at full speed on every device.</p>
-        <Button variant="ghost" size="sm" onClick={() => set({ wallpaper: { ...DEFAULT_WALLPAPER } })}><RotateCcw className="h-3.5 w-3.5" /> Reset</Button>
+        <p className="mt-1 text-[11.5px] leading-relaxed t-muted">
+          Three light and three dark palettes share the same workspace geometry. Each family has its own
+          surfaces, hairlines and accent, with contrast checked for secondary text.
+        </p>
       </div>
     </div>
   );
@@ -794,6 +687,7 @@ export function AtmospherePanel() {
 export function McpPanel() {
   const [servers, setServers] = useState<McpServerStatus[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [name, setName] = useState("");
   const [command, setCommand] = useState("");
@@ -825,6 +719,27 @@ export function McpPanel() {
       out[trimmed.slice(0, index).trim()] = trimmed.slice(index + 1).trim();
     }
     return out;
+  };
+
+  const detect = async () => {
+    setBusy("detect");
+    setError(null);
+    setNotice(null);
+    try {
+      const result = await discoverMcpServers();
+      setServers(result.servers);
+      setNotice(
+        result.imported
+          ? `Imported ${result.imported} local ${result.imported === 1 ? "server" : "servers"} from ${result.sources} configuration ${result.sources === 1 ? "file" : "files"}.`
+          : result.discovered
+            ? "Every discovered server is already configured."
+            : "No supported local MCP configurations found.",
+      );
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : String(caught));
+    } finally {
+      setBusy(null);
+    }
   };
 
   const add = async () => {
@@ -886,48 +801,55 @@ export function McpPanel() {
     <div className="space-y-6">
       <Field label="MCP servers" hint="Local tools over the Model Context Protocol">
         {servers === null ? (
-          <div className="flex items-center gap-2 px-1 text-[13px] text-white/50">
+          <div className="flex items-center gap-2 px-1 text-[12.5px] t-muted">
             <Spinner className="h-4 w-4" /> Loading servers…
           </div>
         ) : servers.length === 0 ? (
-          <p className="px-1 text-[13px] text-white/50">
+          <p className="px-1 text-[12.5px] t-muted">
             No MCP servers yet. Add one below and its tools become available to the agent.
           </p>
         ) : (
-          <div className="space-y-2">
+          <div className="space-y-1.5">
             {servers.map((server) => (
               <div
                 key={server.id}
-                className="flex flex-wrap items-center gap-3 rounded-2xl bg-white/[0.05] px-4 py-3 shadow-[inset_0_1px_0_rgba(255,255,255,.12)]"
+                className="flex flex-wrap items-center gap-2.5 rounded-[4px] border border-[var(--line)] bg-surface2 px-3 py-2.5"
               >
-                <span className={cn("grid h-9 w-9 shrink-0 place-items-center rounded-xl", server.connected ? "bg-emerald-300/15 text-emerald-100" : "bg-white/10 text-white/60")}>
-                  <Server className="h-[18px] w-[18px]" />
+                <span
+                  className={cn(
+                    "grid h-8 w-8 shrink-0 place-items-center rounded-md border",
+                    server.connected
+                      ? "border-[var(--line)] bg-ok-soft t-ok"
+                      : "border-[var(--line)] bg-surface t-muted",
+                  )}
+                >
+                  <Server className="h-4 w-4" />
                 </span>
                 <div className="min-w-0 flex-1">
-                  <div className="truncate text-[14px] font-medium">{server.name}</div>
-                  <div className="truncate font-mono text-[11.5px] text-white/45">
+                  <div className="truncate text-[12.5px] font-medium t-ink">{server.name}</div>
+                  <div className="truncate font-mono text-[10.5px] t-faint">
                     {server.command}
                     {server.args.length ? ` ${server.args.join(" ")}` : ""}
                   </div>
                   {server.connected ? (
-                    <div className="mt-0.5 truncate text-[11.5px] text-emerald-200/80">
+                    <div className="mt-0.5 truncate text-[10.5px] t-ok">
                       {server.tools.length} tool{server.tools.length === 1 ? "" : "s"}
                       {server.tools.length ? ` · ${server.tools.map((tool) => tool.name).join(", ")}` : ""}
                     </div>
                   ) : server.error ? (
-                    <div className="mt-0.5 truncate text-[11.5px] text-amber-200/80">{server.error}</div>
+                    <div className="mt-0.5 truncate text-[10.5px] t-warn">{server.error}</div>
                   ) : (
-                    <div className="mt-0.5 text-[11.5px] text-white/35">Not started</div>
+                    <div className="mt-0.5 text-[10.5px] t-faint">Not started</div>
                   )}
                 </div>
-                <div className="flex shrink-0 items-center gap-1.5">
+                <div className="flex shrink-0 items-center gap-1">
                   <Button variant="ghost" size="sm" disabled={busy === server.id} onClick={() => void test(server.id)}>
                     {busy === server.id ? <Spinner className="h-3.5 w-3.5" /> : <Zap className="h-3.5 w-3.5" />} Test
                   </Button>
                   <button
                     onClick={() => void remove(server.id)}
                     disabled={busy === server.id}
-                    className="grid h-8 w-8 place-items-center rounded-full text-white/45 transition hover:bg-white/12 hover:text-white disabled:opacity-40"
+                    className="grid h-7 w-7 place-items-center rounded-md t-muted transition-colors hover-s3 hover-ink disabled:opacity-40"
                     aria-label={`Remove ${server.name}`}
                   >
                     <Trash2 className="h-3.5 w-3.5" />
@@ -940,7 +862,7 @@ export function McpPanel() {
       </Field>
 
       <Field label="Add a server" hint="Started locally when a run needs it">
-        <div className="space-y-3 rounded-2xl bg-white/[0.05] px-4 py-4 shadow-[inset_0_1px_0_rgba(255,255,255,.12)]">
+        <div className="space-y-2.5 rounded-[4px] border border-[var(--line)] bg-surface2 px-3.5 py-3.5">
           <TextInput value={name} onChange={(e) => setName(e.target.value)} placeholder="Display name (optional)" />
           <TextInput value={command} onChange={(e) => setCommand(e.target.value)} placeholder="Command, e.g. npx" />
           <TextInput value={args} onChange={(e) => setArgs(e.target.value)} placeholder="Arguments, e.g. -y @modelcontextprotocol/server-filesystem ." />
@@ -948,26 +870,34 @@ export function McpPanel() {
             value={env}
             onChange={(e) => setEnv(e.target.value)}
             placeholder={"Environment variables, one per line\nAPI_KEY=value"}
-            className="scroll-thin min-h-[84px] w-full resize-y rounded-xl bg-black/25 px-3 py-2.5 font-mono text-[12px] leading-relaxed text-white/80 outline-none placeholder:text-white/30 focus:ring-1 focus:ring-white/30"
+            className="scroll-thin min-h-[84px] w-full resize-y rounded-[4px] border border-[var(--line-strong)] bg-surface px-3 py-2 font-mono text-[11.5px] leading-relaxed t-ink2 outline-none transition-[border-color,box-shadow] placeholder:text-[var(--faint)] focus:border-[var(--accent)] focus:shadow-[0_0_0_3px_var(--accent-soft)]"
           />
-          <div className="flex items-center justify-between gap-3">
-            <Button variant="primary" size="sm" disabled={busy === "add"} onClick={() => void add()}>
-              {busy === "add" ? <Spinner className="h-3.5 w-3.5" /> : <Server className="h-3.5 w-3.5" />} Add server
-            </Button>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex flex-wrap items-center gap-2">
+              <Button variant="primary" size="sm" disabled={busy === "add"} onClick={() => void add()}>
+                {busy === "add" ? <Spinner className="h-3.5 w-3.5" /> : <Server className="h-3.5 w-3.5" />} Add server
+              </Button>
+              <Button variant="secondary" size="sm" disabled={busy === "detect"} onClick={() => void detect()}>
+                {busy === "detect" ? <Spinner className="h-3.5 w-3.5" /> : <SearchCheck className="h-3.5 w-3.5" />} Detect existing
+              </Button>
+            </div>
             <button
               onClick={() => setReload((n) => n + 1)}
-              className="inline-flex items-center gap-1.5 text-[12.5px] text-white/45 hover:text-white"
+              className="inline-flex items-center gap-1.5 text-[11.5px] t-muted hover-ink"
             >
-              <RefreshCw className="h-3.5 w-3.5" /> Refresh
+              <RefreshCw className="h-3 w-3" /> Refresh
             </button>
           </div>
         </div>
-        {error && <p className="mt-2 flex items-center gap-1.5 px-1 text-[12.5px] text-amber-200"><AlertTriangle className="h-3.5 w-3.5" /> {error}</p>}
+        {notice && <p className="mt-2 flex items-center gap-1.5 px-1 text-[11.5px] t-ok"><CheckCircle2 className="h-3 w-3" /> {notice}</p>}
+        {error && <p className="mt-2 flex items-center gap-1.5 px-1 text-[11.5px] t-warn"><AlertTriangle className="h-3 w-3" /> {error}</p>}
       </Field>
 
-      <p className="px-1 text-[12.5px] leading-relaxed text-white/45">
+      <p className="px-1 text-[11.5px] leading-relaxed t-faint">
         MCP servers run as local processes with the permissions of your account. Their tools are treated as
-        commands, so they ask for approval in Ask first and Balanced modes.
+        commands, so they ask for approval in Ask first and Balanced modes. Existing local OpenCode configurations
+        are imported on first launch; Detect existing scans again without starting a server. Remote HTTP servers
+        are not imported by this stdio-only build.
       </p>
     </div>
   );
@@ -975,6 +905,7 @@ export function McpPanel() {
 
 export function MemoryPanel() {
   const { state } = useStore();
+  const { boot, saveSettings } = useServer();
   const [entries, setEntries] = useState<MemoryEntry[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
@@ -1016,75 +947,110 @@ export function MemoryPanel() {
     }
   };
 
+  const updateAutoSave = async (autoSave: boolean) => {
+    setBusy("autoSave");
+    setError(null);
+    try {
+      await saveSettings({ memory: { autoSave } });
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : String(caught));
+    } finally {
+      setBusy(null);
+    }
+  };
+
   return (
     <div className="space-y-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h3 className="flex items-center gap-2 font-serif text-[24px] leading-tight"><Brain className="h-[18px] w-[18px] accent-text" /> Memory</h3>
-          <p className="text-[13px] text-white/55">Durable facts the agent has saved across sessions. Delete anything you no longer want it to recall.</p>
+          <h3 className="flex items-center gap-2 text-[15px] font-semibold leading-tight t-ink">
+            <Brain className="h-4 w-4 t-accent" /> Memory
+          </h3>
+          <p className="mt-0.5 text-[11.5px] t-muted">Durable facts the agent has saved across sessions. Delete anything you no longer want it to recall.</p>
         </div>
         <Button variant="ghost" size="sm" onClick={() => setReload((n) => n + 1)}>
           <RefreshCw className={cn("h-3.5 w-3.5", entries === null && "animate-spin")} /> Refresh
         </Button>
       </div>
 
+      <div className="flex items-center gap-3 rounded-[12px] border border-[var(--line)] bg-surface2 px-3.5 py-3">
+        <span className="grid h-8 w-8 shrink-0 place-items-center rounded-[8px] border border-[var(--line)] bg-surface">
+          <Brain className="h-4 w-4 t-accent" />
+        </span>
+        <div className="min-w-0 flex-1">
+          <div className="text-[13px] font-medium t-ink">Automatic personal memory</div>
+          <div className="mt-0.5 text-[11.5px] leading-relaxed t-muted">
+            After an answer, Hikes saves explicit durable facts and preferences from your message. Attachments,
+            one-off tasks and obvious secrets are excluded. Turning this off keeps existing entries.
+          </div>
+        </div>
+        <Toggle
+          on={boot?.memory.autoSave ?? true}
+          onChange={(value) => void updateAutoSave(value)}
+          label="Automatic personal memory"
+          disabled={busy === "autoSave" || !boot || !state.tools.memory}
+        />
+      </div>
+
       {!state.tools.memory && (
-        <p className="flex items-start gap-2 rounded-2xl bg-amber-300/10 px-3.5 py-2.5 text-[12.5px] text-amber-100 shadow-[inset_0_0_0_1px_rgba(255,220,150,.18)]">
-          <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-          Memory is turned off in Agent settings. Existing entries are kept but the agent will not read or write them.
+        <p className="flex items-start gap-2 rounded-[4px] border border-[var(--line)] bg-warn-soft px-3 py-2 text-[11.5px] t-warn">
+          <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" />
+          <span>Memory is turned off in Agent settings. Existing entries are kept but the agent will not read or write them.</span>
         </p>
       )}
 
       {entries !== null && (
-        <div className="relative">
-          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-white/35" />
+        <div className="field flex h-9 items-center gap-2 px-2.5">
+          <Search className="h-3.5 w-3.5 shrink-0 t-faint" />
           <input
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             placeholder="Search memories"
-            className="w-full rounded-xl bg-black/25 py-2.5 pl-9 pr-3 text-[13px] text-white/85 outline-none placeholder:text-white/30 focus:ring-1 focus:ring-white/30"
+            className="min-w-0 flex-1 bg-transparent text-[12.5px] t-ink outline-none placeholder:text-[var(--faint)]"
           />
         </div>
       )}
 
       {entries === null ? (
-        <div className="flex items-center gap-2.5 py-10 text-[13.5px] text-white/55"><Spinner className="h-4 w-4" /> Loading memories…</div>
+        <div className="flex items-center gap-2.5 py-10 text-[12.5px] t-muted"><Spinner className="h-4 w-4" /> Loading memories…</div>
       ) : entries.length === 0 ? (
-        <div className="glass-css flex flex-col items-center rounded-3xl px-6 py-12 text-center">
-          <Database className="mb-3 h-8 w-8 text-white/35" />
-          <p className="font-serif text-[22px]">{query.trim() ? "No matching memories" : "Nothing remembered yet"}</p>
-          <p className="mt-1.5 max-w-sm text-[13px] leading-relaxed text-white/50">
+        <div className="flex flex-col items-center rounded-[6px] border border-dashed border-[var(--line-strong)] bg-surface2 px-6 py-12 text-center">
+          <Database className="mb-3 h-7 w-7 t-faint" />
+          <p className="font-display text-[21px] t-ink">{query.trim() ? "No matching memories" : "Nothing remembered yet"}</p>
+          <p className="mt-1.5 max-w-sm text-[12px] leading-relaxed t-muted">
             {query.trim()
               ? "Search looks at every word, including partial words and tags, so a differently phrased fact can still surface."
               : "When the agent learns something worth keeping, it saves a short fact here. You can remove individual entries at any time."}
           </p>
         </div>
       ) : (
-        <div className="space-y-2.5">
+        <div className="space-y-1.5">
           {entries.map((entry) => {
             const tags = entry.tags.split(",").map((tag) => tag.trim()).filter(Boolean);
             return (
-              <div key={entry.id} className="group rounded-2xl bg-white/[0.06] px-4 py-3 shadow-[inset_0_1px_0_rgba(255,255,255,.14)]">
-                <div className="flex items-start gap-3">
-                  <span className="mt-0.5 grid h-7 w-7 shrink-0 place-items-center rounded-xl bg-white/10"><Brain className="h-3.5 w-3.5 text-white/70" /></span>
+              <div key={entry.id} className="rounded-[4px] border border-[var(--line)] bg-surface2 px-3.5 py-2.5">
+                <div className="flex items-start gap-2.5">
+                  <span className="mt-0.5 grid h-6 w-6 shrink-0 place-items-center rounded-md border border-[var(--line)] bg-surface">
+                    <Brain className="h-3 w-3 t-muted" />
+                  </span>
                   <div className="min-w-0 flex-1">
-                    <p className="whitespace-pre-wrap break-words text-[13.5px] leading-relaxed text-white/85">{entry.content}</p>
-                    <div className="mt-2 flex flex-wrap items-center gap-2 text-[10.5px] text-white/40">
-                      <span className="inline-flex items-center gap-1"><Clock className="h-3 w-3" />{new Date(entry.created_at).toLocaleString()}</span>
-                      <span className="rounded-full bg-white/10 px-2 py-0.5 uppercase tracking-[0.12em] text-white/50">{entry.scope}</span>
+                    <p className="whitespace-pre-wrap break-words text-[12.5px] leading-relaxed t-ink2">{entry.content}</p>
+                    <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-[10px] t-faint">
+                      <span className="inline-flex items-center gap-1"><Clock className="h-2.5 w-2.5" />{new Date(entry.created_at).toLocaleString()}</span>
+                      <span className="rounded border border-[var(--line)] bg-surface px-1.5 py-px uppercase tracking-[0.1em] t-muted">{entry.scope}</span>
                       {tags.map((tag) => (
-                        <span key={tag} className="rounded-full bg-white/[0.07] px-2 py-0.5 text-white/45">#{tag}</span>
+                        <span key={tag} className="rounded border border-[var(--line)] bg-surface px-1.5 py-px t-muted">#{tag}</span>
                       ))}
                     </div>
                   </div>
                   <button
                     onClick={() => void remove(entry)}
                     disabled={busy === entry.id}
-                    className="grid h-8 w-8 shrink-0 place-items-center rounded-full text-white/40 transition hover:bg-white/15 hover:text-white disabled:opacity-40"
+                    className="grid h-7 w-7 shrink-0 place-items-center rounded-md t-muted transition-colors hover-s3 hover-ink disabled:opacity-40"
                     aria-label="Delete memory"
                     title="Delete memory"
                   >
-                    {busy === entry.id ? <Spinner className="h-3.5 w-3.5" /> : <Trash2 className="h-3.5 w-3.5" />}
+                    {busy === entry.id ? <Spinner className="h-3.5 w-3.5" /> : <Trash2 className="h-3 w-3" />}
                   </button>
                 </div>
               </div>
@@ -1093,15 +1059,15 @@ export function MemoryPanel() {
         </div>
       )}
 
-      {error && <p className="flex items-center gap-1.5 px-1 text-[12.5px] text-amber-200"><AlertTriangle className="h-3.5 w-3.5" /> {error}</p>}
+      {error && <p className="flex items-center gap-1.5 px-1 text-[11.5px] t-warn"><AlertTriangle className="h-3 w-3" /> {error}</p>}
     </div>
   );
 }
 
 const SHORTCUTS = [
   { keys: "Ctrl K", label: "Command palette" },
-  { keys: "Ctrl B", label: "Show or hide sidebar" },
-  { keys: "Ctrl J", label: "Show or hide inspector" },
+  { keys: "Ctrl B", label: "Show or hide the session index" },
+  { keys: "Ctrl J", label: "Show or hide the activity ledger" },
   { keys: "Esc", label: "Close settings, palette or menus" },
 ] as const;
 
@@ -1112,14 +1078,16 @@ export function AboutPanel() {
   return (
     <div className="space-y-6">
       <div>
-        <h3 className="flex items-center gap-2 font-serif text-[26px] leading-tight"><Info className="h-[18px] w-[18px] accent-text" /> About Hikes</h3>
-        <p className="mt-1 text-[13.5px] leading-relaxed text-white/55">
-          A local-first agent harness: one glass shell, real tools, and any model you can reach.
+        <h3 className="flex items-center gap-2 text-[15px] font-semibold leading-tight t-ink">
+          <Info className="h-4 w-4 t-accent" /> About Hikes
+        </h3>
+        <p className="mt-1 text-[12px] leading-relaxed t-muted">
+          A local-first agent harness: a quiet workspace, real tools, and any model you can reach.
         </p>
       </div>
 
       {boot ? (
-        <div className="grid gap-2 sm:grid-cols-2">
+        <div className="grid gap-1.5 sm:grid-cols-2">
           <InfoRow icon={Info} label="Version" value={`Hikes v${boot.version}`} mono={false} />
           <InfoRow icon={Server} label="Node" value={boot.node} />
           <InfoRow icon={HardDrive} label="Data directory" value={boot.dataDir} />
@@ -1130,25 +1098,25 @@ export function AboutPanel() {
           <InfoRow icon={KeyRound} label="Providers" value={`${Object.values(boot.providers).filter((p) => p.enabled).length} enabled`} mono={false} />
         </div>
       ) : (
-        <div className="flex items-center gap-2.5 py-6 text-[13.5px] text-white/55"><Spinner className="h-4 w-4" /> Loading harness details…</div>
+        <div className="flex items-center gap-2.5 py-6 text-[12.5px] t-muted"><Spinner className="h-4 w-4" /> Loading harness details…</div>
       )}
 
       <Field label="Keyboard shortcuts">
-        <div className="divide-y divide-white/[0.07] overflow-hidden rounded-2xl bg-white/[0.05] shadow-[inset_0_1px_0_rgba(255,255,255,.12)]">
+        <div className="divide-line overflow-hidden rounded-[4px] border border-[var(--line)] bg-surface">
           {SHORTCUTS.map((shortcut) => (
-            <div key={shortcut.keys} className="flex items-center justify-between gap-3 px-4 py-2.5 text-[13px]">
-              <span className="flex items-center gap-2 text-white/70"><Keyboard className="h-3.5 w-3.5 text-white/40" />{shortcut.label}</span>
-              <span className="shrink-0 rounded-md bg-white/10 px-1.5 py-0.5 font-mono text-[10.5px] text-white/55">{shortcut.keys}</span>
+            <div key={shortcut.keys} className="flex items-center justify-between gap-3 px-3.5 py-2 text-[12px]">
+              <span className="flex items-center gap-2 t-muted"><Keyboard className="h-3 w-3 t-faint" />{shortcut.label}</span>
+              <span className="kbd shrink-0">{shortcut.keys}</span>
             </div>
           ))}
         </div>
       </Field>
 
-      <div className="flex items-start gap-2.5 rounded-2xl bg-white/[0.05] px-3.5 py-3 text-[12.5px] leading-relaxed text-white/55 shadow-[inset_0_1px_0_rgba(255,255,255,.12)]">
-        <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-emerald-200/80" />
+      <div className="flex items-start gap-2.5 rounded-[4px] border border-[var(--line)] bg-surface2 px-3.5 py-2.5 text-[11.5px] leading-relaxed t-muted">
+        <ShieldCheck className="mt-0.5 h-3.5 w-3.5 shrink-0 t-ok" />
         <span>
           Setup runs once. This build deliberately has no “restart onboarding” action, so your profile, providers and appearance stay put. Your configuration is stored locally at{" "}
-          <span className="font-mono text-white/70">~/.hikes/config.json</span> and in this browser.
+          <span className="font-mono t-ink2">~/.hikes/config.json</span> and in this browser.
           {state.onboarded ? " Setup is complete on this device." : ""}
         </span>
       </div>

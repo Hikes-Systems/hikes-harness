@@ -81,8 +81,14 @@ export class Db {
   constructor(file: string) {
     fs.mkdirSync(path.dirname(file), { recursive: true });
     this.db = new DatabaseSync(file);
+    // WAL keeps readers and a writer from blocking each other, and NORMAL is
+    // the safe companion to it: a power loss can lose the tail of the log, a
+    // process crash cannot.
     this.db.exec("PRAGMA journal_mode = WAL;");
     this.db.exec("PRAGMA foreign_keys = ON;");
+    this.db.exec("PRAGMA busy_timeout = 5000;");
+    this.db.exec("PRAGMA synchronous = NORMAL;");
+    this.checkIntegrity();
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS sessions (
         id TEXT PRIMARY KEY,
@@ -155,8 +161,39 @@ export class Db {
       .run();
   }
 
+  /**
+   * Log (without failing) when the file is damaged.
+   *
+   * A corrupt database would surface as nonsense errors later, so it is
+   * worth saying plainly at start-up. `quick_check` is the cheap version.
+   */
+  private checkIntegrity(): void {
+    try {
+      const row = this.db.prepare("PRAGMA quick_check").get() as { quick_check?: string } | undefined;
+      if (row?.quick_check && row.quick_check !== "ok") {
+        console.error(`[hikes] database check reported: ${row.quick_check}`);
+      }
+    } catch (error) {
+      console.error(
+        `[hikes] database check failed: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+  }
+
   close(): void {
+    try {
+      // Fold the WAL back and refresh the planner statistics gathered so the
+      // next start opens on a tidied file.
+      this.db.exec("PRAGMA optimize;");
+    } catch {
+      /* the file is going away anyway */
+    }
     this.db.close();
+  }
+
+  sessionCount(): number {
+    const row = this.db.prepare("SELECT COUNT(*) AS n FROM sessions").get() as { n: number };
+    return row.n;
   }
 
   listSessions(): SessionSummary[] {

@@ -169,6 +169,10 @@ export async function listMcpServers(): Promise<McpServerStatus[]> {
   return data.servers;
 }
 
+export async function discoverMcpServers(): Promise<{ imported: number; discovered: number; sources: number; servers: McpServerStatus[] }> {
+  return request("/mcp/discover", { method: "POST" });
+}
+
 export async function saveMcpServer(
   server: McpServerConfig,
 ): Promise<McpServerStatus[]> {

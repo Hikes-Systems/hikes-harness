@@ -23,8 +23,10 @@ export interface McpToolBinding {
 export class McpManager {
   private readonly servers: () => McpServerConfig[];
   private readonly clients = new Map<string, McpClient>();
+  private readonly connecting = new Map<string, Promise<McpServerStatus>>();
   private readonly errors = new Map<string, string>();
   private readonly bindings = new Map<string, McpToolBinding>();
+  private stopped = false;
 
   constructor(servers: () => McpServerConfig[]) {
     this.servers = servers;
@@ -46,6 +48,19 @@ export class McpManager {
   }
 
   async connect(id: string): Promise<McpServerStatus> {
+    if (this.stopped) throw new McpError("The MCP manager has stopped.");
+    const pending = this.connecting.get(id);
+    if (pending) return pending;
+    const attempt = this.connectFresh(id);
+    this.connecting.set(id, attempt);
+    try {
+      return await attempt;
+    } finally {
+      this.connecting.delete(id);
+    }
+  }
+
+  private async connectFresh(id: string): Promise<McpServerStatus> {
     const server = this.servers().find((entry) => entry.id === id);
     if (!server) throw new McpError("Unknown MCP server.");
     const existing = this.clients.get(id);
@@ -56,6 +71,10 @@ export class McpManager {
     const client = new McpClient(server);
     try {
       await client.start();
+      if (this.stopped) {
+        client.stop();
+        throw new McpError("The MCP manager has stopped.");
+      }
       this.clients.set(id, client);
       this.errors.delete(id);
     } catch (error) {
@@ -66,12 +85,15 @@ export class McpManager {
   }
 
   async disconnect(id: string): Promise<void> {
+    const pending = this.connecting.get(id);
+    if (pending) await pending;
     this.clients.get(id)?.stop();
     this.clients.delete(id);
     this.errors.delete(id);
   }
 
   stopAll(): void {
+    this.stopped = true;
     for (const client of this.clients.values()) client.stop();
     this.clients.clear();
   }

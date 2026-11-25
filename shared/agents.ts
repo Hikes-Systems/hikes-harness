@@ -12,30 +12,9 @@ export const AGENTS: AgentDef[] = [
   {
     id: "hikes",
     name: "Hikes",
-    desc: "All-round assistant",
+    desc: "Your workspace agent",
     prompt:
-      "Be practical, clear and resourceful. Decide when a tool will materially improve the answer, and verify important facts instead of guessing.",
-  },
-  {
-    id: "scout",
-    name: "Scout",
-    desc: "Research & synthesis",
-    prompt:
-      "Gather evidence, compare viewpoints, flag uncertainty and structure findings clearly. Prefer primary sources and always cite the pages you used.",
-  },
-  {
-    id: "forge",
-    name: "Forge",
-    desc: "Code & debugging",
-    prompt:
-      "Inspect the real workspace before changing code, prefer minimal correct changes, run tests when useful, and explain trade-offs briefly.",
-  },
-  {
-    id: "quill",
-    name: "Quill",
-    desc: "Writing & editing",
-    prompt:
-      "Match the user's voice, tighten prose, and offer concrete alternatives. Use tools to check facts or read source material when needed.",
+      "Be practical, clear and resourceful. Inspect the real workspace before changing it, decide when a tool will materially improve the answer, and verify important facts instead of guessing.",
   },
 ];
 
@@ -45,12 +24,6 @@ export const isAgentId = (id: string): boolean => AGENTS.some((agent) => agent.i
 /** Resolve an id to a built-in agent, falling back to the generalist. */
 export const agentById = (id: string): AgentDef =>
   AGENTS.find((agent) => agent.id === id) ?? AGENTS[0];
-
-/** User-facing identity overrides. Kept in the UI store, sent with each run. */
-export interface AgentIdentity {
-  name: string;
-  mascot: string;
-}
 
 export type SubAgentType = "researcher" | "coder" | "analyst" | "writer" | "planner";
 
